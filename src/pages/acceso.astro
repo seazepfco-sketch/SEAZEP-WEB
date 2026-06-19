@@ -1,0 +1,27 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import SectionTitle from "../components/SectionTitle.astro";
+---
+
+<BaseLayout title="Acceso usuarios | SEAZEP">
+  <Header />
+
+  <main class="section form-panel">
+    <SectionTitle
+      eyebrow="Portal privado"
+      title="Acceso para usuarios registrados."
+      text="Los usuarios autorizados podrán consultar manuales, documentos técnicos y recursos asociados a los softwares o servicios asignados."
+    />
+
+    <form class="form-grid">
+      <input class="input" placeholder="Correo electrónico" />
+      <input class="input" placeholder="Contraseña" type="password" />
+      <button class="btn btn-primary" type="button">Iniciar sesión</button>
+      <a class="btn btn-ghost" href="/registro">Crear cuenta de usuario</a>
+    </form>
+  </main>
+
+  <Footer />
+</BaseLayout>

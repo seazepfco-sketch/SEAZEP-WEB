@@ -1,0 +1,30 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import SectionTitle from "../components/SectionTitle.astro";
+---
+
+<BaseLayout title="Registro de usuario | SEAZEP">
+  <Header />
+
+  <main class="section form-panel">
+    <SectionTitle
+      eyebrow="Registro"
+      title="Registro para acceso a recursos SEAZEP."
+      text="El registro puede quedar pendiente de validación por el administrador antes de habilitar descargas o manuales privados."
+    />
+
+    <form class="form-grid">
+      <input class="input" placeholder="Nombre completo" />
+      <input class="input" placeholder="Empresa" />
+      <input class="input" placeholder="Cargo / área" />
+      <input class="input" placeholder="Correo electrónico" />
+      <input class="input" placeholder="Teléfono" />
+      <input class="input" placeholder="Contraseña" type="password" />
+      <button class="btn btn-primary" type="button">Enviar registro</button>
+    </form>
+  </main>
+
+  <Footer />
+</BaseLayout>

@@ -1,0 +1,14 @@
+name = "seazep-api"
+main = "src/index.js"
+compatibility_date = "2026-06-19"
+
+[vars]
+APP_NAME = "SEAZEP API"
+APP_ENV = "development"
+FRONTEND_ORIGIN = "*"
+
+# Crear una base D1 y reemplazar database_id.
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "seazep-db"
+# database_id = "REEMPLAZAR"

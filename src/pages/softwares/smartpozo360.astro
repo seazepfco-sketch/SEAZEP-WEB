@@ -1,0 +1,136 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import Header from "../../components/Header.astro";
+import Footer from "../../components/Footer.astro";
+import SectionTitle from "../../components/SectionTitle.astro";
+
+const modules = [
+  {
+    number: "01",
+    title: "Base de fuentes",
+    text: "Registro de información general de fuentes de abastecimiento, ubicación, organismo operador y datos base para iniciar el diagnóstico técnico.",
+    image: "/assets/softwares/smartpozo360/modulos/modulo-01-base-fuentes.jpg",
+    alt: "Módulo Base de fuentes de SmartPozo360"
+  },
+  {
+    number: "02",
+    title: "Inventario técnico",
+    text: "Concentración de información técnica del sistema, incluyendo equipo de bombeo, motor, transformador, columna, ademe y componentes relevantes.",
+    image: "/assets/softwares/smartpozo360/modulos/modulo-02-inventario-tecnico.jpg",
+    alt: "Módulo Inventario técnico de SmartPozo360"
+  },
+  {
+    number: "03",
+    title: "Hidráulica + esquema",
+    text: "Captura de condiciones hidráulicas obtenidas en campo, carga dinámica, niveles de operación, presión de descarga y esquema visual del sistema.",
+    image: "/assets/softwares/smartpozo360/modulos/modulo-03-hidraulica-esquema.jpg",
+    alt: "Módulo Hidráulica y esquema de SmartPozo360"
+  },
+  {
+    number: "04",
+    title: "Mediciones eléctricas",
+    text: "Registro de voltajes, corrientes, factor de potencia, potencia activa y variables eléctricas necesarias para analizar el desempeño del equipo.",
+    image: "/assets/softwares/smartpozo360/modulos/modulo-04-mediciones-electricas.jpg",
+    alt: "Módulo Mediciones eléctricas de SmartPozo360"
+  },
+  {
+    number: "05",
+    title: "Evaluación",
+    text: "Cálculo automático de eficiencia electromecánica, indicadores de operación, desbalances energéticos y condición general del sistema motor-bomba.",
+    image: "/assets/softwares/smartpozo360/modulos/modulo-05-evaluacion.jpg",
+    alt: "Módulo Evaluación de SmartPozo360"
+  },
+  {
+    number: "06",
+    title: "Curvas de operación",
+    text: "Análisis del punto de operación mediante curvas de bomba, caudal, carga dinámica total, potencia ideal y eficiencia esperada del equipo propuesto.",
+    image: "/assets/softwares/smartpozo360/modulos/modulo-06-curvas-operacion.jpg",
+    alt: "Módulo Curvas de operación de SmartPozo360"
+  },
+  {
+    number: "07",
+    title: "Propuesta / inversión",
+    text: "Integración de propuesta técnica, ahorro estimado, demanda esperada, inversión preliminar y retorno simple para apoyar la toma de decisiones.",
+    image: "/assets/softwares/smartpozo360/modulos/modulo-07-propuesta-inversion.jpg",
+    alt: "Módulo Propuesta e inversión de SmartPozo360"
+  },
+  {
+    number: "08",
+    title: "Reporte y respaldo",
+    text: "Generación de reportes técnicos, respaldo documental, exportación PDF y conservación de información para seguimiento operativo y administrativo.",
+    image: "/assets/softwares/smartpozo360/modulos/modulo-08-reporte-respaldo.jpg",
+    alt: "Módulo Reporte y respaldo de SmartPozo360"
+  }
+];
+---
+
+<BaseLayout title="SmartPozo360 | SEAZEP Agua y Energía">
+  <Header active="softwares" />
+
+  <main>
+    <section class="section software-showcase">
+      <div>
+        <span class="eyebrow">Software técnico especializado</span>
+        <h1>SmartPozo360</h1>
+        <p>
+          Plataforma para diagnóstico electromecánico de equipos de bombeo, orientada a integrar datos de campo, evaluar eficiencia, analizar curvas de operación y generar reportes técnicos para organismos operadores y responsables de infraestructura hidráulica.
+        </p>
+        <div class="badge-list">
+          <span>Diagnóstico electromecánico</span>
+          <span>Curvas de operación</span>
+          <span>Indicadores técnicos</span>
+          <span>Reporte PDF</span>
+          <span>Licencia anual</span>
+        </div>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="/solicitar-demo">Solicitar adquisición</a>
+          <a class="btn btn-ghost" href="/recursos">Ver manuales</a>
+        </div>
+      </div>
+
+      <div class="showcase-image">
+        <img src="/assets/smartpozo360-preview.png" alt="Interfaz de SmartPozo360" />
+      </div>
+    </section>
+
+    <section class="section">
+      <SectionTitle
+        eyebrow="Módulos"
+        title="Un flujo técnico organizado para evaluación de campo y propuesta."
+        text="SmartPozo360 divide el diagnóstico en módulos para evitar hojas saturadas y facilitar una captura estructurada, auditable y exportable."
+      />
+
+      <div class="smartpozo-modules-grid">
+  {modules.map((item) => (
+    <article class="smartpozo-module-card">
+      <div class="smartpozo-module-image">
+        <img src={item.image} alt={item.alt} loading="lazy" />
+        <span>{item.number}</span>
+      </div>
+
+      <div class="smartpozo-module-content">
+        <h3>{item.title}</h3>
+        <p>{item.text}</p>
+      </div>
+    </article>
+  ))}
+</div>
+    </section>
+
+    <section class="section">
+      <SectionTitle
+        eyebrow="Implementación empresarial"
+        title="Adquisición bajo contacto directo con SEAZEP."
+        text="SmartPozo360 no se plantea como venta pública de pago inmediato. Su implementación se gestiona por solicitud empresarial, revisión de alcance, licenciamiento anual y acompañamiento técnico."
+      />
+
+      <div class="grid-3">
+        <article class="card"><h3>Licencia por equipo</h3><p>Activación controlada por ID de PC, vigencia anual y renovación administrada por SEAZEP.</p></article>
+        <article class="card"><h3>Control administrativo</h3><p>Panel futuro para revisar licencias activas, vencimientos, activaciones, consultas diarias y empresas asociadas.</p></article>
+        <article class="card"><h3>Soporte documental</h3><p>Usuarios registrados podrán acceder a manuales, documentos técnicos y recursos asignados.</p></article>
+      </div>
+    </section>
+  </main>
+
+  <Footer />
+</BaseLayout>

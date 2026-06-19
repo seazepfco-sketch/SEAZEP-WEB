@@ -1,0 +1,52 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import SectionTitle from "../components/SectionTitle.astro";
+---
+
+<BaseLayout title="Servicios SEAZEP | Agua y Energía">
+  <Header active="servicios" />
+
+  <main class="section">
+    <SectionTitle
+      eyebrow="Servicios SEAZEP"
+      title="Soluciones técnicas para operación, eficiencia y control."
+      text="Nuestra propuesta se enfoca en diagnóstico, medición, automatización y desarrollo de herramientas para mejorar la eficiencia de los servicios de agua y energía."
+    />
+
+    <div class="grid-2">
+      <article class="card">
+        <h3>Evaluación de extracción y error de macromedición</h3>
+        <p>Análisis técnico de condiciones de extracción, producción y medición de caudales, con enfoque en desviaciones operativas, errores de registro y mejora de la macromedición.</p>
+      </article>
+
+      <article class="card">
+        <h3>Evaluación de micromedición</h3>
+        <p>Diagnóstico de desempeño de sistemas de micromedición para determinar confiabilidad, errores de registro, comportamiento del parque de medidores y oportunidades de optimización.</p>
+      </article>
+
+      <article class="card">
+        <h3>Localización y detección de fugas no visibles</h3>
+        <p>Identificación de fugas no visibles en redes, tomas e infraestructura hidráulica residencial y urbana para reducir pérdidas físicas y afectaciones operativas.</p>
+      </article>
+
+      <article class="card">
+        <h3>Diagnóstico electromecánico en equipos de bombeo</h3>
+        <p>Evaluación de condiciones hidráulicas y eléctricas, eficiencia de motor-bomba, comportamiento operativo y alternativas de rehabilitación, modernización o sustitución.</p>
+      </article>
+
+      <article class="card">
+        <h3>Automatización y control</h3>
+        <p>Integración de soluciones de monitoreo, supervisión, control operativo y trazabilidad para mejorar continuidad, confiabilidad y respuesta técnica.</p>
+      </article>
+
+      <article class="card">
+        <h3>Software para eficiencia en agua urbana</h3>
+        <p>Herramientas digitales para analizar, documentar y mejorar eficiencia hidráulica, energética y operativa en servicios de distribución de agua a nivel urbano.</p>
+      </article>
+    </div>
+  </main>
+
+  <Footer />
+</BaseLayout>

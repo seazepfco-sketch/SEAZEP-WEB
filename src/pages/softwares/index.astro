@@ -1,0 +1,63 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import Header from "../../components/Header.astro";
+import Footer from "../../components/Footer.astro";
+import SectionTitle from "../../components/SectionTitle.astro";
+---
+
+<BaseLayout title="Softwares SEAZEP | Herramientas técnicas para agua y energía">
+  <Header active="softwares" />
+
+  <main>
+    <section class="section">
+      <SectionTitle
+        eyebrow="Catálogo de softwares"
+        title="Herramientas digitales para eficiencia, operación y control."
+        text="El catálogo SEAZEP integrará plataformas especializadas para diagnóstico, medición, eficiencia electromecánica, automatización, distribución de agua y gestión técnica."
+      />
+
+      <div class="grid-3">
+        <article class="card">
+          <span class="eyebrow">Disponible / base inicial</span>
+          <h3>SmartPozo360</h3>
+          <p>Diagnóstico electromecánico para equipos de bombeo, evaluación de eficiencia, curvas de operación, propuesta técnica y reportes.</p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="/softwares/smartpozo360">Ver software</a>
+          </div>
+        </article>
+
+        <article class="card">
+          <span class="eyebrow">Planeado</span>
+          <h3>Medición 360</h3>
+          <p>Herramienta futura para análisis de micromedición, confiabilidad del parque de medidores, indicadores y trazabilidad de evaluación.</p>
+        </article>
+
+        <article class="card">
+          <span class="eyebrow">Planeado</span>
+          <h3>Fugas Urbanas</h3>
+          <p>Sistema futuro para documentación de localización, evidencia, seguimiento y control de fugas no visibles en redes urbanas.</p>
+        </article>
+
+        <article class="card">
+          <span class="eyebrow">Planeado</span>
+          <h3>Control Operativo</h3>
+          <p>Panel para monitoreo, bitácoras, indicadores y trazabilidad de actividades técnicas en organismos operadores.</p>
+        </article>
+
+        <article class="card">
+          <span class="eyebrow">Planeado</span>
+          <h3>Eficiencia Agua Urbana</h3>
+          <p>Modelo digital para evaluación integral de eficiencia física, hidráulica, energética y operativa en sistemas de distribución.</p>
+        </article>
+
+        <article class="card">
+          <span class="eyebrow">A la medida</span>
+          <h3>Software especializado</h3>
+          <p>Desarrollo de plataformas específicas conforme a procesos, necesidades técnicas, medición, operación y control institucional.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <Footer />
+</BaseLayout>

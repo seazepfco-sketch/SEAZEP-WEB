@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
+<defs>
+<linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0%" stop-color="#0ea5e9"/><stop offset="55%" stop-color="#0b3b88"/><stop offset="100%" stop-color="#020617"/>
+</linearGradient>
+<radialGradient id="r" cx="50%" cy="40%" r="60%"><stop offset="0%" stop-color="#38bdf8" stop-opacity=".45"/><stop offset="100%" stop-color="#020617" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="1200" height="720" fill="#020617"/>
+<rect width="1200" height="720" fill="url(#g)" opacity=".55"/>
+<rect width="1200" height="720" fill="url(#r)"/>
+<g stroke="#38bdf8" stroke-opacity=".18">
+<path d="M0 120H1200M0 240H1200M0 360H1200M0 480H1200M0 600H1200"/>
+<path d="M120 0V720M240 0V720M360 0V720M480 0V720M600 0V720M720 0V720M840 0V720M960 0V720M1080 0V720"/>
+</g>
+<g fill="none" stroke="#67e8f9" stroke-width="3" opacity=".75">
+<path d="M150 510 C300 350 410 620 570 420 S840 280 1040 170"/>
+<circle cx="150" cy="510" r="12" fill="#38bdf8"/><circle cx="570" cy="420" r="12" fill="#38bdf8"/><circle cx="1040" cy="170" r="12" fill="#38bdf8"/>
+</g>
+<text x="70" y="95" fill="#e0f2fe" font-size="40" font-family="Arial" font-weight="700">SEAZEP DIGITAL PLATFORM</text>
+<text x="70" y="145" fill="#7dd3fc" font-size="20" font-family="Arial">Agua · Energía · Eficiencia · Software técnico</text>
+</svg>

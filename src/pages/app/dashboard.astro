@@ -1,0 +1,30 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import Footer from "../../components/Footer.astro";
+---
+
+<BaseLayout title="Panel usuario | SEAZEP">
+  <main class="portal-layout">
+    <aside class="portal-sidebar">
+      <img src="/assets/seazep-logo.png" alt="SEAZEP" />
+      <a class="active" href="/app/dashboard">Inicio</a>
+      <a href="/recursos">Manuales</a>
+      <a href="/softwares">Softwares</a>
+      <a href="/">Cerrar sesión</a>
+    </aside>
+
+    <section class="section">
+      <span class="eyebrow">Panel usuario</span>
+      <h1>Recursos asignados</h1>
+      <p>Vista base para usuarios registrados. En producción se conectará con la API SEAZEP para mostrar manuales, licencias y descargas autorizadas.</p>
+
+      <div class="grid-3">
+        <article class="card"><h3>SmartPozo360</h3><p>Manual de operación, guía de instalación y material técnico asignado.</p></article>
+        <article class="card"><h3>Descargas</h3><p>Registro futuro de documentos descargados, fecha y versión.</p></article>
+        <article class="card"><h3>Soporte</h3><p>Canal para solicitudes técnicas o comerciales.</p></article>
+      </div>
+    </section>
+  </main>
+
+  <Footer />
+</BaseLayout>

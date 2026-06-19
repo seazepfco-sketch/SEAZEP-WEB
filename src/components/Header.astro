@@ -1,0 +1,26 @@
+---
+const active = Astro.props.active || "";
+---
+
+<header class="site-header">
+  <a class="brand" href="/">
+    <img src="/assets/seazep-logo.png" alt="SEAZEP Agua y Energía" />
+    <span>
+      <strong>SEAZEP S.A. De C.V.</strong>
+      <small>Agua · Energía · Tecnología</small>
+    </span>
+  </a>
+
+  <nav class="main-nav" aria-label="Navegación principal">
+    <a class={active === "inicio" ? "active" : ""} href="/">Inicio</a>
+    <a class={active === "servicios" ? "active" : ""} href="/servicios">Servicios</a>
+    <a class={active === "softwares" ? "active" : ""} href="/softwares">Softwares</a>
+    <a class={active === "recursos" ? "active" : ""} href="/recursos">Recursos</a>
+    <a class={active === "contacto" ? "active" : ""} href="/contacto">Contacto</a>
+  </nav>
+
+  <div class="nav-actions">
+    <a class="btn btn-ghost" href="/acceso">Acceso</a>
+    <a class="btn btn-primary" href="/solicitar-demo">Solicitar información</a>
+  </div>
+</header>

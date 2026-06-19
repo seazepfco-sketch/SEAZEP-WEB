@@ -1,0 +1,43 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import SectionTitle from "../components/SectionTitle.astro";
+---
+
+<BaseLayout title="Centro de recursos SEAZEP">
+  <Header active="recursos" />
+
+  <main class="section">
+    <SectionTitle
+      eyebrow="Centro de recursos"
+      title="Manuales, documentos técnicos y material para usuarios registrados."
+      text="Esta sección está preparada para que los usuarios autorizados puedan consultar y descargar manuales asociados a los softwares o servicios asignados."
+    />
+
+    <div class="grid-3">
+      <article class="card">
+        <span class="eyebrow">SmartPozo360</span>
+        <h3>Manual de operación</h3>
+        <p>Documento para usuarios autorizados. Descarga protegida futura desde panel privado.</p>
+        <a class="btn btn-ghost" href="/acceso">Iniciar sesión</a>
+      </article>
+
+      <article class="card">
+        <span class="eyebrow">SmartPozo360</span>
+        <h3>Guía de instalación</h3>
+        <p>Procedimiento de instalación, activación, vigencia, respaldo y uso básico.</p>
+        <a class="btn btn-ghost" href="/acceso">Iniciar sesión</a>
+      </article>
+
+      <article class="card">
+        <span class="eyebrow">SEAZEP</span>
+        <h3>Documentación técnica</h3>
+        <p>Espacio para guías de servicios, criterios técnicos, formatos de campo y materiales de capacitación.</p>
+        <a class="btn btn-ghost" href="/registro">Registrarse</a>
+      </article>
+    </div>
+  </main>
+
+  <Footer />
+</BaseLayout>

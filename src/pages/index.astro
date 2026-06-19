@@ -1,0 +1,124 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import SectionTitle from "../components/SectionTitle.astro";
+---
+
+<BaseLayout title="SEAZEP Agua y Energía | Software, eficiencia y soluciones técnicas">
+  <Header active="inicio" />
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <span class="eyebrow">Agua · Energía · Software técnico</span>
+        <h1>Inteligencia técnica para sistemas de agua y energía.</h1>
+        <p>
+          SEAZEP integra evaluación operativa, eficiencia electromecánica, automatización, control y desarrollo de software especializado para fortalecer la toma de decisiones en organismos operadores, infraestructura urbana y sistemas de bombeo.
+        </p>
+
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="/softwares">Explorar softwares</a>
+          <a class="btn btn-ghost" href="/servicios">Ver servicios técnicos</a>
+          <a class="btn btn-dark" href="/acceso">Acceso a manuales</a>
+        </div>
+
+        <div class="metric-row">
+          <div class="metric"><strong>360°</strong><span>Diagnóstico técnico integral</span></div>
+          <div class="metric"><strong>24/7</strong><span>Validación y trazabilidad futura</span></div>
+          <div class="metric"><strong>B2B</strong><span>Implementación empresarial</span></div>
+          <div class="metric"><strong>ADM</strong><span>Control privado de licencias</span></div>
+        </div>
+      </div>
+
+      <div class="glass-panel hero-visual">
+        <div class="visual-stage">
+          <div class="hero-logo-card">
+            <img src="/assets/seazep-logo.png" alt="SEAZEP Agua y Energía" />
+            <div>
+              <span class="eyebrow">Plataforma SEAZEP</span>
+              <h3>Innovación técnica para agua y energía.</h3>
+            </div>
+          </div>
+
+          <div class="orbit-card">
+            <div><strong>Agua</strong><span>Medición, distribución, fugas y eficiencia.</span></div>
+            <div><strong>Energía</strong><span>Equipos de bombeo, consumo y mejora.</span></div>
+            <div><strong>Software</strong><span>Herramientas técnicas para operación urbana.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <SectionTitle
+        eyebrow="Servicios especializados"
+        title="Evaluación técnica y soluciones operativas para infraestructura hidráulica."
+        text="SEAZEP ofrece servicios orientados a incrementar la confiabilidad de la medición, optimizar la operación de sistemas de agua, detectar pérdidas no visibles y mejorar la eficiencia electromecánica de equipos de bombeo."
+      />
+
+      <div class="grid-3">
+        <article class="card">
+          <h3>Macromedición y extracción</h3>
+          <p>Análisis de condiciones de extracción, producción y medición de caudales para identificar desviaciones, errores de registro y oportunidades de mejora operativa.</p>
+        </article>
+
+        <article class="card">
+          <h3>Micromedición</h3>
+          <p>Evaluación del desempeño de sistemas de micromedición, confiabilidad de registro, comportamiento de medidores y oportunidades para fortalecer la gestión comercial.</p>
+        </article>
+
+        <article class="card">
+          <h3>Fugas no visibles</h3>
+          <p>Localización y detección de fugas residenciales y urbanas orientada a reducir pérdidas de agua, afectaciones a infraestructura y costos operativos.</p>
+        </article>
+
+        <article class="card">
+          <h3>Eficiencia electromecánica</h3>
+          <p>Diagnóstico técnico de sistemas motor-bomba, parámetros hidráulicos y eléctricos, eficiencia energética y alternativas de mejora o sustitución.</p>
+        </article>
+
+        <article class="card">
+          <h3>Automatización y control</h3>
+          <p>Soluciones de supervisión, trazabilidad, monitoreo y control para mejorar continuidad operativa y confiabilidad en sistemas de agua y energía.</p>
+        </article>
+
+        <article class="card">
+          <h3>Software especializado</h3>
+          <p>Desarrollo de herramientas digitales para evaluar, documentar y mejorar la eficiencia de los servicios de distribución de agua en entornos urbanos.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section software-showcase">
+      <div class="showcase-image">
+        <img src="/assets/smartpozo360-preview.png" alt="Vista preliminar de SmartPozo360" />
+      </div>
+
+      <div>
+        <span class="eyebrow">Software destacado</span>
+        <h2>SmartPozo360</h2>
+        <p>
+          Plataforma de diagnóstico electromecánico para equipos de bombeo. Integra información de campo, inventario técnico, mediciones hidráulicas y eléctricas, evaluación automática, curvas de operación, propuesta de mejora y generación de reportes técnicos.
+        </p>
+
+        <div class="badge-list">
+          <span>Base de fuentes</span>
+          <span>Inventario técnico</span>
+          <span>Mediciones hidráulicas</span>
+          <span>Mediciones eléctricas</span>
+          <span>Evaluación</span>
+          <span>Curvas</span>
+          <span>Reporte PDF</span>
+        </div>
+
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="/softwares/smartpozo360">Ver SmartPozo360</a>
+          <a class="btn btn-ghost" href="/solicitar-demo">Solicitar información</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <Footer />
+</BaseLayout>

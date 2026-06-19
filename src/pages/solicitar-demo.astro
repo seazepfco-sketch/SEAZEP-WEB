@@ -1,0 +1,36 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import SectionTitle from "../components/SectionTitle.astro";
+---
+
+<BaseLayout title="Solicitar información | SEAZEP">
+  <Header />
+
+  <main class="section form-panel">
+    <SectionTitle
+      eyebrow="Solicitud empresarial"
+      title="Solicitar información o adquisición de software SEAZEP."
+      text="El proceso está diseñado para soluciones empresariales y técnicas. SEAZEP revisará la solicitud y se pondrá en contacto para definir alcance, licenciamiento y condiciones de implementación."
+    />
+
+    <form class="form-grid">
+      <input class="input" placeholder="Empresa / organismo operador" />
+      <input class="input" placeholder="Nombre del responsable" />
+      <input class="input" placeholder="Cargo" />
+      <input class="input" placeholder="Correo institucional" />
+      <input class="input" placeholder="Teléfono" />
+      <select class="input">
+        <option>Software o servicio de interés</option>
+        <option>SmartPozo360</option>
+        <option>Software personalizado</option>
+        <option>Herramientas para eficiencia de distribución de agua</option>
+      </select>
+      <textarea class="input" placeholder="Explique brevemente la necesidad, alcance esperado o contexto operativo"></textarea>
+      <button class="btn btn-primary" type="button">Registrar solicitud</button>
+    </form>
+  </main>
+
+  <Footer />
+</BaseLayout>

@@ -1,0 +1,38 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import SectionTitle from "../components/SectionTitle.astro";
+---
+
+<BaseLayout title="Contacto SEAZEP">
+  <Header active="contacto" />
+
+  <main class="section form-panel">
+    <SectionTitle
+      eyebrow="Contacto"
+      title="Hablemos de su proyecto, sistema o necesidad técnica."
+      text="Complete la información para que SEAZEP pueda evaluar la solicitud y contactar a su empresa."
+    />
+
+    <form class="form-grid">
+      <input class="input" placeholder="Nombre completo" />
+      <input class="input" placeholder="Empresa / organismo" />
+      <input class="input" placeholder="Correo electrónico" />
+      <input class="input" placeholder="Teléfono" />
+      <select class="input">
+        <option>Servicio de interés</option>
+        <option>SmartPozo360</option>
+        <option>Diagnóstico electromecánico</option>
+        <option>Micromedición</option>
+        <option>Macromedición</option>
+        <option>Fugas no visibles</option>
+        <option>Automatización y control</option>
+      </select>
+      <textarea class="input" placeholder="Describa brevemente su necesidad técnica o comercial"></textarea>
+      <button class="btn btn-primary" type="button">Enviar solicitud</button>
+    </form>
+  </main>
+
+  <Footer />
+</BaseLayout>

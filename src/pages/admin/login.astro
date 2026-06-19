@@ -1,0 +1,17 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Admin SEAZEP">
+  <main class="section form-panel">
+    <span class="eyebrow">ADM único</span>
+    <h1>Panel administrativo SEAZEP</h1>
+    <p>Acceso privado para control de usuarios, empresas, softwares, manuales, licencias, activaciones y consultas de licencia.</p>
+
+    <form class="form-grid">
+      <input class="input" placeholder="Correo administrador" />
+      <input class="input" placeholder="Contraseña" type="password" />
+      <a class="btn btn-primary" href="/admin/dashboard">Entrar al panel</a>
+    </form>
+  </main>
+</BaseLayout>
