@@ -85,6 +85,7 @@ import SectionTitle from "../../components/SectionTitle.astro";
                 <th>Interés</th>
                 <th>Estado</th>
                 <th>Mensaje</th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody id="requestsTableBody">
@@ -103,7 +104,8 @@ import SectionTitle from "../../components/SectionTitle.astro";
   <Footer />
 
   <script>
-    const ADMIN_REQUESTS_URL = "https://seazep-api.seazepfco.workers.dev/admin/requests?limit=50";
+    const ADMIN_REQUESTS_BASE_URL = "https://seazep-api.seazepfco.workers.dev/admin/requests";
+    const ADMIN_UPDATE_STATUS_URL = "https://seazep-api.seazepfco.workers.dev/admin/requests/update-status";
 
     const keyInput = document.getElementById("adminApiKey");
     const loadButton = document.getElementById("loadRequestsButton");
@@ -152,7 +154,7 @@ import SectionTitle from "../../components/SectionTitle.astro";
       if (!requests.length) {
         tableBody.innerHTML = `
           <tr>
-            <td colspan="7" class="admin-empty">
+            <td colspan="8" class="admin-empty">
               No hay solicitudes registradas.
             </td>
           </tr>
@@ -177,12 +179,105 @@ import SectionTitle from "../../components/SectionTitle.astro";
           </td>
           <td>${escapeHtml(item.interest_area)}</td>
           <td>
-            <span class="admin-status-pill">${escapeHtml(item.status)}</span>
+            <span class="admin-status-pill status-${escapeHtml(item.status || "new")}">
+  ${escapeHtml(getStatusLabel(item.status))}
+</span>
           </td>
           <td class="admin-message-cell">${escapeHtml(item.message || "Sin mensaje")}</td>
+<td>${buildActionButtons(item)}</td>
         </tr>
       `).join("");
     }
+
+
+    function getAdminKey() {
+  return String(keyInput?.value || "").trim();
+}
+
+function getStatusLabel(status) {
+  const labels = {
+    new: "Nueva",
+    contacted: "Contactada",
+    negotiation: "Negociación",
+    closed: "Cerrada",
+    discarded: "Descartada"
+  };
+
+  return labels[status] || status || "Nueva";
+}
+
+function buildActionButtons(item) {
+  const currentStatus = item.status || "new";
+
+  const actions = [
+    { status: "contacted", label: "Contactada", className: "info" },
+    { status: "negotiation", label: "Negociación", className: "warn" },
+    { status: "closed", label: "Cerrar", className: "ok" },
+    { status: "discarded", label: "Descartar", className: "danger" }
+  ];
+
+  return `
+    <div class="admin-action-buttons">
+      ${actions.map((action) => `
+        <button
+          class="admin-mini-btn ${action.className}"
+          type="button"
+          data-request-id="${escapeHtml(item.id)}"
+          data-next-status="${escapeHtml(action.status)}"
+          ${currentStatus === action.status ? "disabled" : ""}
+        >
+          ${escapeHtml(action.label)}
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+async function updateRequestStatus(id, status) {
+  const adminKey = getAdminKey();
+
+  if (!adminKey) {
+    setStatus("Ingrese la clave ADM antes de actualizar estados.", "error");
+    return;
+  }
+
+  if (!id || !status) {
+    setStatus("Solicitud o estado no válido.", "error");
+    return;
+  }
+
+  setStatus("Actualizando estado...");
+
+  try {
+    const response = await fetch(ADMIN_UPDATE_STATUS_URL, {
+      method: "POST",
+      mode: "cors",
+      headers: {
+        "x-admin-key": adminKey,
+        "content-type": "text/plain;charset=UTF-8"
+      },
+      body: JSON.stringify({
+        id,
+        status,
+        note: "Actualizado desde panel ADM SEAZEP"
+      })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.ok) {
+      throw new Error(result.message || "No se pudo actualizar el estado.");
+    }
+
+    setStatus("Estado actualizado correctamente.", "success");
+    await loadRequests();
+  } catch (error) {
+    setStatus(error.message || "Error al actualizar estado.", "error");
+  }
+}
+
+
+
 
     async function loadRequests() {
       if (!keyInput || !loadButton || !refreshButton) return;
@@ -199,7 +294,7 @@ import SectionTitle from "../../components/SectionTitle.astro";
       setStatus("Cargando solicitudes...");
 
       try {
-        const response = await fetch(ADMIN_REQUESTS_URL, {
+        const response = await fetch(`${ADMIN_REQUESTS_BASE_URL}?limit=50`, {
           method: "GET",
           mode: "cors",
           headers: {
@@ -236,5 +331,21 @@ import SectionTitle from "../../components/SectionTitle.astro";
 
     loadButton?.addEventListener("click", loadRequests);
     refreshButton?.addEventListener("click", loadRequests);
+
+
+    tableBody?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-request-id][data-next-status]");
+
+  if (!button) return;
+
+  const id = button.dataset.requestId;
+  const status = button.dataset.nextStatus;
+
+  button.disabled = true;
+
+  await updateRequestStatus(id, status);
+});
+
+
   </script>
 </BaseLayout>

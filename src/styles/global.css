@@ -955,3 +955,91 @@ textarea.input {
   }
 }
 
+
+
+/* =========================================================
+   ADMIN — ACCIONES DE SOLICITUDES
+========================================================= */
+
+.admin-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 280px;
+}
+
+.admin-mini-btn {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(56, 189, 248, .26);
+  color: #eaf6ff;
+  background: rgba(15, 23, 42, .78);
+  font-weight: 850;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.admin-mini-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(103, 232, 249, .55);
+}
+
+.admin-mini-btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.admin-mini-btn.info {
+  background: rgba(14, 165, 233, .18);
+  border-color: rgba(14, 165, 233, .42);
+}
+
+.admin-mini-btn.warn {
+  background: rgba(245, 158, 11, .16);
+  border-color: rgba(245, 158, 11, .42);
+}
+
+.admin-mini-btn.ok {
+  background: rgba(20, 184, 166, .16);
+  border-color: rgba(20, 184, 166, .42);
+}
+
+.admin-mini-btn.danger {
+  background: rgba(239, 68, 68, .16);
+  border-color: rgba(239, 68, 68, .42);
+}
+
+.admin-status-pill.status-new {
+  color: #dbeafe;
+  background: rgba(59, 130, 246, .14);
+  border-color: rgba(59, 130, 246, .36);
+}
+
+.admin-status-pill.status-contacted {
+  color: #cffafe;
+  background: rgba(6, 182, 212, .14);
+  border-color: rgba(6, 182, 212, .36);
+}
+
+.admin-status-pill.status-negotiation {
+  color: #fef3c7;
+  background: rgba(245, 158, 11, .14);
+  border-color: rgba(245, 158, 11, .36);
+}
+
+.admin-status-pill.status-closed {
+  color: #ccfbf1;
+  background: rgba(20, 184, 166, .14);
+  border-color: rgba(20, 184, 166, .36);
+}
+
+.admin-status-pill.status-discarded {
+  color: #fecaca;
+  background: rgba(239, 68, 68, .14);
+  border-color: rgba(239, 68, 68, .36);
+}
+
+
+

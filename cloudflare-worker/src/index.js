@@ -39,6 +39,12 @@ export default {
       return handleAdminListRequests(request, env);
     }
 
+
+    if (url.pathname === "/admin/requests/update-status" && request.method === "POST") {
+  return handleAdminUpdateRequestStatus(request, env);
+}
+
+
     /*
       Rutas reservadas para fases futuras de SmartPozo360.
       Se dejan vivas para no romper la estructura del proyecto.
@@ -216,6 +222,132 @@ async function handleAdminListRequests(request, env) {
     requests: result.results
   });
 }
+
+
+
+  async function handleAdminUpdateRequestStatus(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const id = cleanText(body.id, 80);
+  const status = cleanText(body.status, 40);
+  const note = cleanText(body.note || "", 800);
+
+  const allowedStatuses = [
+    "new",
+    "contacted",
+    "negotiation",
+    "closed",
+    "discarded"
+  ];
+
+  if (!id) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_ID",
+      message: "Falta el ID de la solicitud."
+    }, 400);
+  }
+
+  if (!allowedStatuses.includes(status)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_STATUS",
+      message: "Estado no permitido."
+    }, 400);
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT
+      id,
+      company_name,
+      contact_name,
+      status
+    FROM enterprise_requests
+    WHERE id = ?
+    LIMIT 1
+  `)
+    .bind(id)
+    .first();
+
+  if (!existing) {
+    return corsResponse({
+      ok: false,
+      code: "REQUEST_NOT_FOUND",
+      message: "No se encontró la solicitud."
+    }, 404);
+  }
+
+  const previousStatus = existing.status || "new";
+  const now = new Date().toISOString();
+
+  await env.DB.prepare(`
+    UPDATE enterprise_requests
+    SET status = ?
+    WHERE id = ?
+  `)
+    .bind(status, id)
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      "temporary-admin",
+      "update_request_status",
+      "enterprise_requests",
+      id,
+      JSON.stringify({
+        companyName: existing.company_name,
+        contactName: existing.contact_name,
+        previousStatus,
+        newStatus: status,
+        note
+      }),
+      now
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    id,
+    previousStatus,
+    status,
+    message: "Estado actualizado correctamente.",
+    updatedAt: now
+  });
+}
+
+
+
 
 function validateAdminRequest(request, env) {
   const configuredKey = String(env.ADMIN_API_KEY || "").trim();
