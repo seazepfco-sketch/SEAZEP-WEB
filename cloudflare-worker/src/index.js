@@ -70,6 +70,16 @@ if (url.pathname === "/admin/requests/notes" && request.method === "POST") {
 
 
 
+  if (url.pathname === "/admin/users" && request.method === "GET") {
+  return handleAdminListUsers(request, env);
+}
+
+if (url.pathname === "/admin/users/update-status" && request.method === "POST") {
+  return handleAdminUpdateUserStatus(request, env);
+}
+
+
+
 
     /*
       Rutas reservadas para fases futuras de SmartPozo360.
@@ -1337,6 +1347,263 @@ async function sha256Hex(value) {
 
 
 
+  async function handleAdminListUsers(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  const url = new URL(request.url);
+
+  const status = cleanText(url.searchParams.get("status") || "", 40);
+  const search = cleanText(url.searchParams.get("search") || "", 120);
+
+  const rawLimit = Number(url.searchParams.get("limit") || 50);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(Math.trunc(rawLimit), 1), 100)
+    : 50;
+
+  const whereParts = [];
+  const params = [];
+
+  if (status && status !== "all") {
+    whereParts.push("status = ?");
+    params.push(status);
+  }
+
+  if (search) {
+    const likeSearch = `%${search}%`;
+
+    whereParts.push(`(
+      full_name LIKE ?
+      OR email LIKE ?
+      OR company_name LIKE ?
+      OR phone LIKE ?
+      OR role LIKE ?
+      OR status LIKE ?
+    )`);
+
+    params.push(
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch
+    );
+  }
+
+  const whereSql = whereParts.length
+    ? `WHERE ${whereParts.join(" AND ")}`
+    : "";
+
+  const listSql = `
+    SELECT
+      id,
+      full_name,
+      email,
+      company_name,
+      phone,
+      role,
+      status,
+      source,
+      created_at,
+      updated_at
+    FROM users
+    ${whereSql}
+    ORDER BY created_at DESC
+    LIMIT ${limit}
+  `;
+
+  const countSql = `
+    SELECT COUNT(*) AS total
+    FROM users
+    ${whereSql}
+  `;
+
+  const listStatement = env.DB.prepare(listSql);
+  const countStatement = env.DB.prepare(countSql);
+
+  const listResult = params.length
+    ? await listStatement.bind(...params).all()
+    : await listStatement.all();
+
+  const countResult = params.length
+    ? await countStatement.bind(...params).first()
+    : await countStatement.first();
+
+  const summaryResult = await env.DB.prepare(`
+    SELECT
+      COALESCE(status, 'pending') AS status,
+      COUNT(*) AS total
+    FROM users
+    GROUP BY COALESCE(status, 'pending')
+  `).all();
+
+  const totalAllResult = await env.DB.prepare(`
+    SELECT COUNT(*) AS total
+    FROM users
+  `).first();
+
+  const summary = {
+    total: Number(totalAllResult?.total || 0),
+    pending: 0,
+    active: 0,
+    suspended: 0
+  };
+
+  for (const row of summaryResult.results || []) {
+    const key = row.status || "pending";
+    summary[key] = Number(row.total || 0);
+  }
+
+  return corsResponse({
+    ok: true,
+    count: (listResult.results || []).length,
+    total: Number(countResult?.total || 0),
+    limit,
+    filters: {
+      status: status || "all",
+      search
+    },
+    summary,
+    users: listResult.results || []
+  });
+}
+
+
+
+  async function handleAdminUpdateUserStatus(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const userId = cleanText(body.userId, 80);
+  const status = cleanText(body.status, 40);
+  const note = cleanText(body.note || "", 800);
+
+  const allowedStatuses = [
+    "pending",
+    "active",
+    "suspended"
+  ];
+
+  if (!userId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_USER_ID",
+      message: "Falta el ID del usuario."
+    }, 400);
+  }
+
+  if (!allowedStatuses.includes(status)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_STATUS",
+      message: "Estado de usuario no permitido."
+    }, 400);
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT
+      id,
+      full_name,
+      email,
+      company_name,
+      role,
+      status
+    FROM users
+    WHERE id = ?
+    LIMIT 1
+  `)
+    .bind(userId)
+    .first();
+
+  if (!existing) {
+    return corsResponse({
+      ok: false,
+      code: "USER_NOT_FOUND",
+      message: "No se encontró el usuario."
+    }, 404);
+  }
+
+  const previousStatus = existing.status || "pending";
+  const now = new Date().toISOString();
+
+  await env.DB.prepare(`
+    UPDATE users
+    SET
+      status = ?,
+      updated_at = ?
+    WHERE id = ?
+  `)
+    .bind(status, now, userId)
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      "temporary-admin",
+      "admin_user_status_updated",
+      "users",
+      userId,
+      JSON.stringify({
+        fullName: existing.full_name,
+        email: existing.email,
+        companyName: existing.company_name || "",
+        role: existing.role || "user",
+        previousStatus,
+        newStatus: status,
+        note
+      }),
+      now
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    id: userId,
+    previousStatus,
+    status,
+    message: "Estado de usuario actualizado correctamente.",
+    updatedAt: now
+  });
+}
+
+  
 
 
 function validateAdminRequest(request, env) {

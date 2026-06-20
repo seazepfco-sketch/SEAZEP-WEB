@@ -1,30 +1,223 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
+import Header from "../../components/Header.astro";
 import Footer from "../../components/Footer.astro";
+import SectionTitle from "../../components/SectionTitle.astro";
 ---
 
-<BaseLayout title="Panel usuario | SEAZEP">
-  <main class="portal-layout">
-    <aside class="portal-sidebar">
-      <img src="/assets/seazep-logo.png" alt="SEAZEP" />
-      <a class="active" href="/app/dashboard">Inicio</a>
-      <a href="/recursos">Manuales</a>
-      <a href="/softwares">Softwares</a>
-      <a href="/">Cerrar sesión</a>
-    </aside>
+<BaseLayout title="Panel de usuario | SEAZEP">
+  <Header />
 
-    <section class="section">
-      <span class="eyebrow">Panel usuario</span>
-      <h1>Recursos asignados</h1>
-      <p>Vista base para usuarios registrados. En producción se conectará con la API SEAZEP para mostrar manuales, licencias y descargas autorizadas.</p>
+  <main class="section">
+    <SectionTitle
+      eyebrow="Panel privado"
+      title="Bienvenido al panel de usuario SEAZEP."
+      text="Desde este espacio se administrarán los recursos privados, manuales, licencias y accesos autorizados para su empresa."
+    />
 
-      <div class="grid-3">
-        <article class="card"><h3>SmartPozo360</h3><p>Manual de operación, guía de instalación y material técnico asignado.</p></article>
-        <article class="card"><h3>Descargas</h3><p>Registro futuro de documentos descargados, fecha y versión.</p></article>
-        <article class="card"><h3>Soporte</h3><p>Canal para solicitudes técnicas o comerciales.</p></article>
+    <section class="user-dashboard-shell" id="userDashboardShell" hidden>
+      <article class="user-profile-card">
+        <div>
+          <span class="eyebrow">Sesión activa</span>
+          <h2 id="dashboardUserName">Usuario SEAZEP</h2>
+          <p id="dashboardUserEmail">correo@ejemplo.com</p>
+        </div>
+
+        <button class="btn btn-ghost" type="button" id="dashboardLogoutButton">
+          Cerrar sesión
+        </button>
+      </article>
+
+      <div class="user-dashboard-grid">
+        <article class="card">
+          <span class="eyebrow">Empresa</span>
+          <h3 id="dashboardCompanyName">Pendiente</h3>
+          <p>Empresa u organismo asociado al usuario registrado.</p>
+        </article>
+
+        <article class="card">
+          <span class="eyebrow">Teléfono</span>
+          <h3 id="dashboardPhone">N/D</h3>
+          <p>Dato de contacto registrado por el usuario.</p>
+        </article>
+
+        <article class="card">
+          <span class="eyebrow">Rol</span>
+          <h3 id="dashboardRole">user</h3>
+          <p>Tipo de acceso asignado dentro de la plataforma.</p>
+        </article>
+
+        <article class="card">
+          <span class="eyebrow">Estado</span>
+          <h3 id="dashboardStatus">active</h3>
+          <p>Solo usuarios activos pueden acceder al panel privado.</p>
+        </article>
+
+        <article class="card">
+          <span class="eyebrow">Sesión vence</span>
+          <h3 id="dashboardExpiresAt">N/D</h3>
+          <p>Tiempo máximo de validez de la sesión actual.</p>
+        </article>
+
+        <article class="card">
+          <span class="eyebrow">Recursos</span>
+          <h3>Próximamente</h3>
+          <p>En una fase posterior se mostrarán manuales y recursos autorizados.</p>
+        </article>
       </div>
+
+      <section class="user-access-note">
+        <span class="eyebrow">Siguiente módulo</span>
+        <h3>Recursos y manuales privados</h3>
+        <p>
+          Este panel ya reconoce la sesión real del usuario. El siguiente paso será conectar
+          recursos privados, manuales autorizados y permisos por empresa o software.
+        </p>
+      </section>
+    </section>
+
+    <section class="user-dashboard-shell" id="userDashboardBlocked">
+      <article class="user-profile-card">
+        <div>
+          <span class="eyebrow">Acceso requerido</span>
+          <h2>Inicie sesión para continuar.</h2>
+          <p>No se encontró una sesión activa válida.</p>
+        </div>
+
+        <a class="btn btn-primary" href="/acceso">
+          Ir a acceso
+        </a>
+      </article>
     </section>
   </main>
 
   <Footer />
+
+  <script>
+    const dashboardShell = document.getElementById("userDashboardShell");
+    const dashboardBlocked = document.getElementById("userDashboardBlocked");
+
+    const dashboardUserName = document.getElementById("dashboardUserName");
+    const dashboardUserEmail = document.getElementById("dashboardUserEmail");
+    const dashboardCompanyName = document.getElementById("dashboardCompanyName");
+    const dashboardPhone = document.getElementById("dashboardPhone");
+    const dashboardRole = document.getElementById("dashboardRole");
+    const dashboardStatus = document.getElementById("dashboardStatus");
+    const dashboardExpiresAt = document.getElementById("dashboardExpiresAt");
+    const dashboardLogoutButton = document.getElementById("dashboardLogoutButton");
+
+    function clearSeazepSession() {
+      localStorage.removeItem("seazep_user");
+      localStorage.removeItem("seazep_session_token");
+      localStorage.removeItem("seazep_session_expires_at");
+    }
+
+    function formatSessionDate(value) {
+      if (!value) return "N/D";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) {
+        return "N/D";
+      }
+
+      return date.toLocaleString("es-MX", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function getSessionData() {
+      try {
+        const token = localStorage.getItem("seazep_session_token");
+        const expiresAt = localStorage.getItem("seazep_session_expires_at");
+        const rawUser = localStorage.getItem("seazep_user");
+
+        if (!token || !expiresAt || !rawUser) {
+          return null;
+        }
+
+        const expiresDate = new Date(expiresAt);
+
+        if (Number.isNaN(expiresDate.getTime()) || expiresDate <= new Date()) {
+          clearSeazepSession();
+          return null;
+        }
+
+        const user = JSON.parse(rawUser);
+
+        if (!user || user.status !== "active") {
+          clearSeazepSession();
+          return null;
+        }
+
+        return {
+          token,
+          expiresAt,
+          user
+        };
+      } catch {
+        clearSeazepSession();
+        return null;
+      }
+    }
+
+    function renderDashboard() {
+      const session = getSessionData();
+
+      if (!session) {
+        if (dashboardShell) dashboardShell.hidden = true;
+        if (dashboardBlocked) dashboardBlocked.hidden = false;
+
+        setTimeout(() => {
+          window.location.href = "/acceso";
+        }, 1200);
+
+        return;
+      }
+
+      const { user, expiresAt } = session;
+
+      if (dashboardUserName) {
+        dashboardUserName.textContent = user.fullName || "Usuario SEAZEP";
+      }
+
+      if (dashboardUserEmail) {
+        dashboardUserEmail.textContent = user.email || "";
+      }
+
+      if (dashboardCompanyName) {
+        dashboardCompanyName.textContent = user.companyName || "Sin empresa";
+      }
+
+      if (dashboardPhone) {
+        dashboardPhone.textContent = user.phone || "N/D";
+      }
+
+      if (dashboardRole) {
+        dashboardRole.textContent = user.role || "user";
+      }
+
+      if (dashboardStatus) {
+        dashboardStatus.textContent = user.status || "active";
+      }
+
+      if (dashboardExpiresAt) {
+        dashboardExpiresAt.textContent = formatSessionDate(expiresAt);
+      }
+
+      if (dashboardShell) dashboardShell.hidden = false;
+      if (dashboardBlocked) dashboardBlocked.hidden = true;
+    }
+
+    dashboardLogoutButton?.addEventListener("click", () => {
+      clearSeazepSession();
+      window.location.href = "/acceso";
+    });
+
+    renderDashboard();
+  </script>
 </BaseLayout>
