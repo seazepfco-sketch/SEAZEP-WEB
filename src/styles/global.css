@@ -1309,7 +1309,7 @@ textarea.input {
 
 sers\azada\Documents\PROYECTOS_SOFTWARE\SEAZEP\SEAZEP-WEB\src\styles\global.css
 
-Al final pega:
+
 
 .admin-header-actions {
   display: flex;
@@ -1405,6 +1405,19 @@ Al final pega:
   .companies-summary-grid {
     grid-template-columns: 1fr;
   }
+}
+
+
+
+.admin-mini-btn.convert {
+  color: #e0f2fe;
+  border-color: rgba(56, 189, 248, 0.42);
+  background: rgba(14, 165, 233, 0.16);
+}
+
+.admin-mini-btn.convert:hover {
+  background: rgba(14, 165, 233, 0.28);
+  border-color: rgba(125, 211, 252, 0.66);
 }
 
 

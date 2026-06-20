@@ -202,8 +202,10 @@ import SectionTitle from "../../components/SectionTitle.astro";
 
   <script>
     const ADMIN_REQUESTS_BASE_URL = "https://seazep-api.seazepfco.workers.dev/admin/requests";
-    const ADMIN_UPDATE_STATUS_URL = "https://seazep-api.seazepfco.workers.dev/admin/requests/update-status";
-    const ADMIN_REQUEST_NOTES_URL = "https://seazep-api.seazepfco.workers.dev/admin/requests/notes";
+const ADMIN_UPDATE_STATUS_URL = "https://seazep-api.seazepfco.workers.dev/admin/requests/update-status";
+const ADMIN_REQUEST_NOTES_URL = "https://seazep-api.seazepfco.workers.dev/admin/requests/notes";
+const ADMIN_CONVERT_REQUEST_TO_COMPANY_URL = "https://seazep-api.seazepfco.workers.dev/admin/requests/convert-to-company";
+
 
 
     const keyInput = document.getElementById("adminApiKey");
@@ -397,6 +399,15 @@ function buildActionButtons(item) {
       >
         Ver notas
       </button>
+
+      <button
+  class="admin-mini-btn convert"
+  type="button"
+  data-request-id="${escapeHtml(item.id)}"
+  data-request-action="convert-company"
+>
+  Convertir en empresa
+</button>
     </div>
   `;
 }
@@ -557,6 +568,93 @@ async function updateRequestStatus(id, status) {
 
 
 
+  async function convertRequestToCompany(requestId) {
+  const adminKey = getAdminKey();
+
+  if (!adminKey) {
+    setStatus("Ingrese la clave ADM antes de convertir una solicitud.", "error");
+    return;
+  }
+
+  if (!requestId) {
+    setStatus("Solicitud no válida.", "error");
+    return;
+  }
+
+  const confirmConvert = window.confirm(
+    "¿Desea convertir esta solicitud en empresa? La solicitud quedará cerrada y se creará una empresa nueva."
+  );
+
+  if (!confirmConvert) {
+    return;
+  }
+
+  const companyStatus = window.prompt(
+    "Escriba el estado inicial de la empresa: lead, active, suspended o archived",
+    "lead"
+  );
+
+  if (companyStatus === null) {
+    return;
+  }
+
+  const normalizedCompanyStatus = String(companyStatus || "").trim();
+
+  const allowedStatuses = [
+    "lead",
+    "active",
+    "suspended",
+    "archived"
+  ];
+
+  if (!allowedStatuses.includes(normalizedCompanyStatus)) {
+    setStatus("Estado de empresa no permitido. Use: lead, active, suspended o archived.", "error");
+    return;
+  }
+
+  const note = window.prompt(
+    "Nota opcional para la conversión de solicitud a empresa:",
+    "Solicitud convertida en empresa desde panel ADM."
+  );
+
+  if (note === null) {
+    return;
+  }
+
+  setStatus("Convirtiendo solicitud en empresa...");
+
+  try {
+    const response = await fetch(ADMIN_CONVERT_REQUEST_TO_COMPANY_URL, {
+      method: "POST",
+      mode: "cors",
+      headers: {
+        "x-admin-key": adminKey,
+        "content-type": "text/plain;charset=UTF-8"
+      },
+      body: JSON.stringify({
+        requestId,
+        companyStatus: normalizedCompanyStatus,
+        note
+      })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.ok) {
+      throw new Error(result.message || "No se pudo convertir la solicitud en empresa.");
+    }
+
+    setStatus(
+      `Solicitud convertida en empresa correctamente. Empresa ID: ${result.companyId}`,
+      "success"
+    );
+
+    await loadRequests();
+  } catch (error) {
+    setStatus(error.message || "Error al convertir solicitud en empresa.", "error");
+  }
+}
+
 
 
 
@@ -666,12 +764,18 @@ clearFiltersButton?.addEventListener("click", () => {
   const id = button.dataset.requestId;
   const status = button.dataset.nextStatus;
   const noteAction = button.dataset.noteAction;
+  const requestAction = button.dataset.requestAction;
 
   if (!id) return;
 
   button.disabled = true;
 
   try {
+    if (requestAction === "convert-company") {
+      await convertRequestToCompany(id);
+      return;
+    }
+
     if (noteAction === "add") {
       await createRequestNote(id);
       return;

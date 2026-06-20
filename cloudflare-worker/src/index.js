@@ -80,6 +80,12 @@ if (url.pathname === "/admin/requests/notes" && request.method === "POST") {
 }
 
 
+  if (url.pathname === "/admin/requests/convert-to-company" && request.method === "POST") {
+  return handleAdminConvertRequestToCompany(request, env);
+}
+
+
+
 
   if (url.pathname === "/admin/users" && request.method === "GET") {
   return handleAdminListUsers(request, env);
@@ -2468,6 +2474,266 @@ function escapeEmailHtml(value) {
     status,
     message: "Estado de empresa actualizado correctamente.",
     updatedAt: now
+  });
+}
+
+
+
+  async function handleAdminConvertRequestToCompany(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const requestId = cleanText(body.requestId, 80);
+  const companyStatus = cleanText(body.companyStatus || "lead", 40);
+  const adminNote = cleanText(body.note || "", 1000);
+
+  const allowedCompanyStatuses = [
+    "lead",
+    "active",
+    "suspended",
+    "archived"
+  ];
+
+  if (!requestId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_REQUEST_ID",
+      message: "Falta el ID de la solicitud."
+    }, 400);
+  }
+
+  if (!allowedCompanyStatuses.includes(companyStatus)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_COMPANY_STATUS",
+      message: "Estado de empresa no permitido."
+    }, 400);
+  }
+
+  const existingRequest = await env.DB.prepare(`
+    SELECT
+      id,
+      company_name,
+      contact_name,
+      contact_position,
+      contact_email,
+      contact_phone,
+      interest_area,
+      message,
+      status,
+      source,
+      created_at
+    FROM enterprise_requests
+    WHERE id = ?
+    LIMIT 1
+  `)
+    .bind(requestId)
+    .first();
+
+  if (!existingRequest) {
+    return corsResponse({
+      ok: false,
+      code: "REQUEST_NOT_FOUND",
+      message: "No se encontró la solicitud."
+    }, 404);
+  }
+
+  const existingCompany = await env.DB.prepare(`
+    SELECT
+      id,
+      name,
+      status,
+      source_request_id
+    FROM companies
+    WHERE source_request_id = ?
+    LIMIT 1
+  `)
+    .bind(requestId)
+    .first();
+
+  if (existingCompany) {
+    return corsResponse({
+      ok: false,
+      code: "REQUEST_ALREADY_CONVERTED",
+      message: "Esta solicitud ya fue convertida en empresa.",
+      company: existingCompany
+    }, 409);
+  }
+
+  const companyName = cleanText(
+    body.companyName || existingRequest.company_name || "",
+    180
+  );
+
+  const contactName = cleanText(
+    body.contactName || existingRequest.contact_name || "",
+    160
+  );
+
+  const contactEmail = normalizeAuthEmail(
+    body.contactEmail || existingRequest.contact_email || ""
+  );
+
+  const contactPhone = cleanText(
+    body.contactPhone || existingRequest.contact_phone || "",
+    80
+  );
+
+  if (!companyName) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_COMPANY_NAME",
+      message: "La solicitud no tiene nombre de empresa suficiente para convertirla."
+    }, 400);
+  }
+
+  if (contactEmail && !isValidAuthEmail(contactEmail)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_CONTACT_EMAIL",
+      message: "El correo de contacto de la solicitud no es válido."
+    }, 400);
+  }
+
+  const now = new Date().toISOString();
+  const companyId = crypto.randomUUID();
+
+  const notesParts = [
+    "Empresa creada automáticamente desde una solicitud comercial.",
+    `ID de solicitud: ${existingRequest.id}`,
+    `Área de interés: ${existingRequest.interest_area || "No especificada"}`,
+    `Cargo/contacto: ${existingRequest.contact_position || "No especificado"}`,
+    `Mensaje original: ${existingRequest.message || "Sin mensaje"}`
+  ];
+
+  if (adminNote) {
+    notesParts.push(`Nota ADM: ${adminNote}`);
+  }
+
+  const companyNotes = cleanText(notesParts.join("\n"), 1200);
+
+  await env.DB.prepare(`
+    INSERT INTO companies (
+      id,
+      name,
+      legal_name,
+      tax_id,
+      contact_name,
+      contact_email,
+      contact_phone,
+      city,
+      state,
+      country,
+      status,
+      source_request_id,
+      notes,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      companyId,
+      companyName,
+      null,
+      null,
+      contactName || null,
+      contactEmail || null,
+      contactPhone || null,
+      null,
+      null,
+      "México",
+      companyStatus,
+      requestId,
+      companyNotes,
+      now,
+      now
+    )
+    .run();
+
+  const previousRequestStatus = existingRequest.status || "new";
+
+  await env.DB.prepare(`
+    UPDATE enterprise_requests
+    SET status = ?
+    WHERE id = ?
+  `)
+    .bind("closed", requestId)
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      "temporary-admin",
+      "admin_request_converted_to_company",
+      "enterprise_requests",
+      requestId,
+      JSON.stringify({
+        requestId,
+        companyId,
+        companyName,
+        contactName,
+        contactEmail,
+        contactPhone,
+        interestArea: existingRequest.interest_area || "",
+        previousRequestStatus,
+        newRequestStatus: "closed",
+        companyStatus,
+        adminNote
+      }),
+      now
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    message: "Solicitud convertida en empresa correctamente.",
+    requestId,
+    companyId,
+    company: {
+      id: companyId,
+      name: companyName,
+      contactName,
+      contactEmail,
+      contactPhone,
+      status: companyStatus,
+      sourceRequestId: requestId,
+      createdAt: now,
+      updatedAt: now
+    },
+    request: {
+      id: requestId,
+      previousStatus: previousRequestStatus,
+      status: "closed"
+    }
   });
 }
 
