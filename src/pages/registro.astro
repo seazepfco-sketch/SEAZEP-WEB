@@ -12,19 +12,129 @@ import SectionTitle from "../components/SectionTitle.astro";
     <SectionTitle
       eyebrow="Registro"
       title="Registro para acceso a recursos SEAZEP."
-      text="El registro puede quedar pendiente de validación por el administrador antes de habilitar descargas o manuales privados."
+      text="El registro quedará pendiente de validación por el administrador antes de habilitar descargas o manuales privados."
     />
 
-    <form class="form-grid">
-      <input class="input" placeholder="Nombre completo" />
-      <input class="input" placeholder="Empresa" />
-      <input class="input" placeholder="Cargo / área" />
-      <input class="input" placeholder="Correo electrónico" />
-      <input class="input" placeholder="Teléfono" />
-      <input class="input" placeholder="Contraseña" type="password" />
-      <button class="btn btn-primary" type="button">Enviar registro</button>
+    <form class="form-grid" id="registerForm">
+      <input
+        class="input"
+        name="fullName"
+        placeholder="Nombre completo"
+        required
+      />
+
+      <input
+        class="input"
+        name="email"
+        type="email"
+        placeholder="Correo electrónico"
+        required
+      />
+
+      <input
+        class="input"
+        name="companyName"
+        placeholder="Empresa / organismo"
+      />
+
+      <input
+        class="input"
+        name="phone"
+        placeholder="Teléfono"
+      />
+
+      <input
+        class="input"
+        name="password"
+        type="password"
+        placeholder="Contraseña"
+        minlength="8"
+        required
+      />
+
+      <input
+        class="input"
+        name="passwordConfirm"
+        type="password"
+        placeholder="Confirmar contraseña"
+        minlength="8"
+        required
+      />
+
+      <!-- Campo oculto antispam. No eliminar. -->
+      <input
+        type="text"
+        name="website"
+        autocomplete="off"
+        tabindex="-1"
+        style="display:none"
+      />
+
+      <button class="btn btn-primary" type="submit" id="registerSubmitButton">
+        Enviar registro
+      </button>
+
+      <p id="registerFormStatus" class="form-status" aria-live="polite"></p>
     </form>
   </main>
 
   <Footer />
+
+  <script>
+    const SEAZEP_REGISTER_URL = "https://seazep-api.seazepfco.workers.dev/auth/register";
+
+    const registerForm = document.getElementById("registerForm");
+    const registerStatusEl = document.getElementById("registerFormStatus");
+    const registerSubmitButton = document.getElementById("registerSubmitButton");
+
+    if (registerForm) {
+      registerForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        if (!registerStatusEl || !registerSubmitButton) return;
+
+        const formData = new FormData(registerForm);
+
+        const payload = {
+          fullName: String(formData.get("fullName") || "").trim(),
+          email: String(formData.get("email") || "").trim(),
+          companyName: String(formData.get("companyName") || "").trim(),
+          phone: String(formData.get("phone") || "").trim(),
+          password: String(formData.get("password") || ""),
+          passwordConfirm: String(formData.get("passwordConfirm") || ""),
+          website: String(formData.get("website") || "").trim()
+        };
+
+        registerStatusEl.textContent = "Creando registro...";
+        registerStatusEl.className = "form-status";
+        registerSubmitButton.disabled = true;
+
+        try {
+          const response = await fetch(SEAZEP_REGISTER_URL, {
+            method: "POST",
+            mode: "cors",
+            headers: {
+              "content-type": "text/plain;charset=UTF-8"
+            },
+            body: JSON.stringify(payload)
+          });
+
+          const result = await response.json();
+
+          if (!response.ok || !result.ok) {
+            throw new Error(result.message || "No se pudo crear el registro.");
+          }
+
+          registerStatusEl.textContent = "Registro creado correctamente. SEAZEP revisará su solicitud de acceso.";
+          registerStatusEl.className = "form-status success";
+          registerForm.reset();
+        } catch (error) {
+          registerStatusEl.textContent = error.message || "Error al crear registro. Intente nuevamente.";
+          registerStatusEl.className = "form-status error";
+        } finally {
+          registerSubmitButton.disabled = false;
+        }
+      });
+    }
+  </script>
 </BaseLayout>

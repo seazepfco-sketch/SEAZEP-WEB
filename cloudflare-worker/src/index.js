@@ -35,6 +35,13 @@ export default {
       return handleCreateEnterpriseRequest(request, env);
     }
 
+    
+    if (url.pathname === "/auth/register" && request.method === "POST") {
+  return handleAuthRegister(request, env);
+}
+
+
+    
     if (url.pathname === "/admin/requests" && request.method === "GET") {
       return handleAdminListRequests(request, env);
     }
@@ -860,6 +867,210 @@ async function handleAdminCreateRequestNote(request, env) {
     createdAt: now
   });
 }
+
+    async function handleAuthRegister(request, env) {
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const fullName = cleanText(body.fullName, 180);
+  const email = normalizeAuthEmail(body.email);
+  const companyName = cleanText(body.companyName || "", 180);
+  const phone = cleanText(body.phone || "", 60);
+  const password = String(body.password || "");
+  const passwordConfirm = String(body.passwordConfirm || "");
+  const website = cleanText(body.website || "", 120);
+
+  if (website) {
+    return corsResponse({
+      ok: true,
+      message: "Registro recibido correctamente."
+    });
+  }
+
+  if (!fullName) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_FULL_NAME",
+      message: "Ingrese el nombre completo."
+    }, 400);
+  }
+
+  if (!email || !isValidAuthEmail(email)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_EMAIL",
+      message: "Ingrese un correo electrónico válido."
+    }, 400);
+  }
+
+  if (!password || password.length < 8) {
+    return corsResponse({
+      ok: false,
+      code: "WEAK_PASSWORD",
+      message: "La contraseña debe tener al menos 8 caracteres."
+    }, 400);
+  }
+
+  if (password !== passwordConfirm) {
+    return corsResponse({
+      ok: false,
+      code: "PASSWORD_MISMATCH",
+      message: "Las contraseñas no coinciden."
+    }, 400);
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT id
+    FROM users
+    WHERE lower(email) = lower(?)
+    LIMIT 1
+  `)
+    .bind(email)
+    .first();
+
+  if (existing) {
+    return corsResponse({
+      ok: false,
+      code: "EMAIL_EXISTS",
+      message: "Ya existe un usuario registrado con ese correo."
+    }, 409);
+  }
+
+  const now = new Date().toISOString();
+  const userId = crypto.randomUUID();
+  const passwordHash = await hashAuthPassword(password);
+
+  await env.DB.prepare(`
+    INSERT INTO users (
+      id,
+      full_name,
+      email,
+      password_hash,
+      company_name,
+      phone,
+      role,
+      status,
+      source,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      userId,
+      fullName,
+      email,
+      passwordHash,
+      companyName,
+      phone,
+      "user",
+      "pending",
+      "website",
+      now,
+      now
+    )
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      userId,
+      "auth_register",
+      "users",
+      userId,
+      JSON.stringify({
+        fullName,
+        email,
+        companyName,
+        role: "user",
+        status: "pending"
+      }),
+      now
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    id: userId,
+    status: "pending",
+    message: "Registro creado correctamente. SEAZEP revisará la solicitud de acceso.",
+    createdAt: now
+  });
+}
+
+
+
+  function normalizeAuthEmail(value) {
+  return String(value || "").trim().toLowerCase().slice(0, 180);
+}
+
+function isValidAuthEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || ""));
+}
+
+async function hashAuthPassword(password) {
+  const encoder = new TextEncoder();
+  const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: saltBytes,
+      iterations: 100000,
+      hash: "SHA-256"
+    },
+    keyMaterial,
+    256
+  );
+
+  const hashBytes = new Uint8Array(derivedBits);
+
+  return [
+    "pbkdf2_sha256",
+    "100000",
+    bytesToBase64(saltBytes),
+    bytesToBase64(hashBytes)
+  ].join("$");
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return btoa(binary);
+}
+
+
+
 
 
 function validateAdminRequest(request, env) {
