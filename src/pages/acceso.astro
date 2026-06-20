@@ -15,22 +15,26 @@ import SectionTitle from "../components/SectionTitle.astro";
       text="Ingrese con su correo y contraseña. Las cuentas nuevas requieren aprobación administrativa antes de acceder."
     />
 
-    <form class="form-grid" id="loginForm">
+    <form class="form-grid" id="loginForm" autocomplete="off">
       <input
-        class="input"
-        name="email"
-        type="email"
-        placeholder="Correo electrónico"
-        required
-      />
+  class="input"
+  name="email"
+  type="email"
+  placeholder="Correo electrónico"
+  autocomplete="off"
+  value=""
+  required
+/>
 
       <input
-        class="input"
-        name="password"
-        type="password"
-        placeholder="Contraseña"
-        required
-      />
+  class="input"
+  name="password"
+  type="password"
+  placeholder="Contraseña"
+  autocomplete="new-password"
+  value=""
+  required
+/>
 
       <!-- Campo oculto antispam. No eliminar. -->
       <input
@@ -57,6 +61,20 @@ import SectionTitle from "../components/SectionTitle.astro";
     const loginForm = document.getElementById("loginForm");
     const loginStatusEl = document.getElementById("loginFormStatus");
     const loginSubmitButton = document.getElementById("loginSubmitButton");
+
+    if (loginForm) {
+  loginForm.reset();
+
+  setTimeout(() => {
+    loginForm.reset();
+
+    const emailInput = loginForm.querySelector('input[name="email"]');
+    const passwordInput = loginForm.querySelector('input[name="password"]');
+
+    if (emailInput) emailInput.value = "";
+    if (passwordInput) passwordInput.value = "";
+  }, 150);
+}
 
     if (loginForm) {
       loginForm.addEventListener("submit", async (event) => {

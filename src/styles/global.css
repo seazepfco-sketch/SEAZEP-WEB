@@ -1233,3 +1233,6 @@ textarea.input {
 }
 
 
+.header-user-box[hidden] {
+  display: none !important;
+}

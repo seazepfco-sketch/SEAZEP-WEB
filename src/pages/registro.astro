@@ -15,7 +15,7 @@ import SectionTitle from "../components/SectionTitle.astro";
       text="El registro quedará pendiente de validación por el administrador antes de habilitar descargas o manuales privados."
     />
 
-    <form class="form-grid" id="registerForm">
+    <form class="form-grid" id="registerForm" autocomplete="off">
       <input
         class="input"
         name="fullName"
@@ -24,12 +24,14 @@ import SectionTitle from "../components/SectionTitle.astro";
       />
 
       <input
-        class="input"
-        name="email"
-        type="email"
-        placeholder="Correo electrónico"
-        required
-      />
+  class="input"
+  name="email"
+  type="email"
+  placeholder="Correo electrónico"
+  autocomplete="off"
+  value=""
+  required
+/>
 
       <input
         class="input"
@@ -44,22 +46,26 @@ import SectionTitle from "../components/SectionTitle.astro";
       />
 
       <input
-        class="input"
-        name="password"
-        type="password"
-        placeholder="Contraseña"
-        minlength="8"
-        required
-      />
+  class="input"
+  name="password"
+  type="password"
+  placeholder="Contraseña"
+  autocomplete="new-password"
+  value=""
+  minlength="8"
+  required
+/>
 
       <input
-        class="input"
-        name="passwordConfirm"
-        type="password"
-        placeholder="Confirmar contraseña"
-        minlength="8"
-        required
-      />
+  class="input"
+  name="passwordConfirm"
+  type="password"
+  placeholder="Confirmar contraseña"
+  autocomplete="new-password"
+  value=""
+  minlength="8"
+  required
+/>
 
       <!-- Campo oculto antispam. No eliminar. -->
       <input
@@ -86,6 +92,14 @@ import SectionTitle from "../components/SectionTitle.astro";
     const registerForm = document.getElementById("registerForm");
     const registerStatusEl = document.getElementById("registerFormStatus");
     const registerSubmitButton = document.getElementById("registerSubmitButton");
+
+    if (registerForm) {
+  registerForm.reset();
+
+  setTimeout(() => {
+    registerForm.reset();
+  }, 150);
+}
 
     if (registerForm) {
       registerForm.addEventListener("submit", async (event) => {

@@ -32,6 +32,9 @@ const active = Astro.props.active || "";
 </div>
 
     <a class="btn btn-ghost" href="/acceso" id="headerAccessButton">Acceso</a>
+    <a class="btn btn-ghost" href="/registro" id="headerRegisterButton">
+  Crear cuenta
+</a>
     <a class="btn btn-primary" href="/solicitar-demo">Solicitar información</a>
   </div>
 
@@ -43,6 +46,8 @@ const active = Astro.props.active || "";
   const headerUserEmail = document.getElementById("headerUserEmail");
   const headerLogoutButton = document.getElementById("headerLogoutButton");
   const headerAccessButton = document.getElementById("headerAccessButton");
+
+  const headerRegisterButton = document.getElementById("headerRegisterButton");
 
   function getStoredSeazepUser() {
     try {
@@ -73,10 +78,11 @@ const active = Astro.props.active || "";
     const user = getStoredSeazepUser();
 
     if (!user) {
-      if (headerUserBox) headerUserBox.hidden = true;
-      if (headerAccessButton) headerAccessButton.hidden = false;
-      return;
-    }
+  if (headerUserBox) headerUserBox.hidden = true;
+  if (headerAccessButton) headerAccessButton.hidden = false;
+  if (headerRegisterButton) headerRegisterButton.hidden = false;
+  return;
+}
 
     if (headerUserName) {
       headerUserName.textContent = user.fullName || "Usuario SEAZEP";
@@ -93,6 +99,11 @@ const active = Astro.props.active || "";
     if (headerAccessButton) {
       headerAccessButton.hidden = true;
     }
+
+
+    if (headerRegisterButton) {
+  headerRegisterButton.hidden = true;
+}
   }
 
   headerLogoutButton?.addEventListener("click", () => {
