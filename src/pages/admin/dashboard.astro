@@ -34,6 +34,93 @@ import SectionTitle from "../../components/SectionTitle.astro";
             autocomplete="off"
           />
 
+
+
+          <section class="admin-filter-panel">
+  <div class="admin-filter-header">
+    <div>
+      <span class="eyebrow">Filtros ADM</span>
+      <h3>Seguimiento de solicitudes</h3>
+    </div>
+
+    <button class="btn btn-secondary" type="button" id="adminClearFiltersButton">
+      Limpiar filtros
+    </button>
+  </div>
+
+  <div class="admin-filter-grid">
+    <label class="admin-filter-field">
+      <span>Estado</span>
+      <select class="input" id="adminStatusFilter">
+        <option value="all">Todos los estados</option>
+        <option value="new">Nueva</option>
+        <option value="contacted">Contactada</option>
+        <option value="negotiation">Negociación</option>
+        <option value="closed">Cerrada</option>
+        <option value="discarded">Descartada</option>
+      </select>
+    </label>
+
+    <label class="admin-filter-field">
+      <span>Servicio</span>
+      <select class="input" id="adminInterestFilter">
+        <option value="all">Todos los servicios</option>
+        <option value="SmartPozo360">SmartPozo360</option>
+        <option value="Diagnóstico electromecánico">Diagnóstico electromecánico</option>
+        <option value="Micromedición">Micromedición</option>
+        <option value="Macromedición">Macromedición</option>
+        <option value="Fugas no visibles">Fugas no visibles</option>
+        <option value="Automatización y control">Automatización y control</option>
+      </select>
+    </label>
+
+    <label class="admin-filter-field admin-filter-search">
+      <span>Buscar</span>
+      <input
+        class="input"
+        id="adminSearchInput"
+        placeholder="Empresa, responsable, correo, teléfono o mensaje"
+      />
+    </label>
+  </div>
+
+  <div class="admin-summary-grid">
+    <article class="admin-summary-card">
+      <span>Total</span>
+      <strong id="summaryTotal">0</strong>
+    </article>
+
+    <article class="admin-summary-card">
+      <span>Nuevas</span>
+      <strong id="summaryNew">0</strong>
+    </article>
+
+    <article class="admin-summary-card">
+      <span>Contactadas</span>
+      <strong id="summaryContacted">0</strong>
+    </article>
+
+    <article class="admin-summary-card">
+      <span>Negociación</span>
+      <strong id="summaryNegotiation">0</strong>
+    </article>
+
+    <article class="admin-summary-card">
+      <span>Cerradas</span>
+      <strong id="summaryClosed">0</strong>
+    </article>
+
+    <article class="admin-summary-card danger">
+      <span>Descartadas</span>
+      <strong id="summaryDiscarded">0</strong>
+    </article>
+  </div>
+</section>
+
+
+
+
+
           <button class="btn btn-primary" id="loadRequestsButton" type="button">
             Cargar solicitudes
           </button>
@@ -115,6 +202,20 @@ import SectionTitle from "../../components/SectionTitle.astro";
     const totalRequestsEl = document.getElementById("totalRequests");
     const newRequestsEl = document.getElementById("newRequests");
 
+
+    const statusFilter = document.getElementById("adminStatusFilter");
+const interestFilter = document.getElementById("adminInterestFilter");
+const searchInput = document.getElementById("adminSearchInput");
+const clearFiltersButton = document.getElementById("adminClearFiltersButton");
+
+const summaryTotal = document.getElementById("summaryTotal");
+const summaryNew = document.getElementById("summaryNew");
+const summaryContacted = document.getElementById("summaryContacted");
+const summaryNegotiation = document.getElementById("summaryNegotiation");
+const summaryClosed = document.getElementById("summaryClosed");
+const summaryDiscarded = document.getElementById("summaryDiscarded");
+
+
     function setStatus(message, type = "") {
       if (!statusEl) return;
       statusEl.textContent = message;
@@ -129,6 +230,43 @@ import SectionTitle from "../../components/SectionTitle.astro";
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#039;");
     }
+
+
+
+    function buildRequestsUrl() {
+  const params = new URLSearchParams();
+
+  params.set("limit", "50");
+
+  const status = String(statusFilter?.value || "all").trim();
+  const interestArea = String(interestFilter?.value || "all").trim();
+  const search = String(searchInput?.value || "").trim();
+
+  if (status && status !== "all") {
+    params.set("status", status);
+  }
+
+  if (interestArea && interestArea !== "all") {
+    params.set("interestArea", interestArea);
+  }
+
+  if (search) {
+    params.set("search", search);
+  }
+
+  return `${ADMIN_REQUESTS_BASE_URL}?${params.toString()}`;
+}
+
+function updateSummary(summary = {}) {
+  if (summaryTotal) summaryTotal.textContent = String(summary.total || 0);
+  if (summaryNew) summaryNew.textContent = String(summary.new || 0);
+  if (summaryContacted) summaryContacted.textContent = String(summary.contacted || 0);
+  if (summaryNegotiation) summaryNegotiation.textContent = String(summary.negotiation || 0);
+  if (summaryClosed) summaryClosed.textContent = String(summary.closed || 0);
+  if (summaryDiscarded) summaryDiscarded.textContent = String(summary.discarded || 0);
+}
+
+
 
     function formatDate(value) {
       if (!value) return "N/D";
@@ -280,54 +418,97 @@ async function updateRequestStatus(id, status) {
 
 
     async function loadRequests() {
-      if (!keyInput || !loadButton || !refreshButton) return;
+  if (!keyInput) return;
 
-      const adminKey = String(keyInput.value || "").trim();
+  const adminKey = String(keyInput.value || "").trim();
 
-      if (!adminKey) {
-        setStatus("Ingrese la clave ADM para consultar solicitudes.", "error");
-        return;
+  if (!adminKey) {
+    setStatus("Ingrese la clave ADM para cargar solicitudes.", "error");
+    return;
+  }
+
+  setStatus("Cargando solicitudes...");
+
+  if (loadButton) {
+    loadButton.disabled = true;
+  }
+
+  if (refreshButton) {
+    refreshButton.disabled = true;
+  }
+
+  try {
+    const response = await fetch(buildRequestsUrl(), {
+      method: "GET",
+      mode: "cors",
+      headers: {
+        "x-admin-key": adminKey
       }
+    });
 
-      loadButton.disabled = true;
-      refreshButton.disabled = true;
-      setStatus("Cargando solicitudes...");
+    const result = await response.json();
 
-      try {
-        const response = await fetch(`${ADMIN_REQUESTS_BASE_URL}?limit=50`, {
-          method: "GET",
-          mode: "cors",
-          headers: {
-            "x-admin-key": adminKey
-          }
-        });
-
-        const result = await response.json();
-
-        if (!response.ok || !result.ok) {
-          throw new Error(result.message || "No se pudieron cargar las solicitudes.");
-        }
-
-        const requests = Array.isArray(result.requests) ? result.requests : [];
-
-        renderRequests(requests);
-
-        if (totalRequestsEl) totalRequestsEl.textContent = String(requests.length);
-        if (newRequestsEl) {
-          newRequestsEl.textContent = String(
-            requests.filter((item) => item.status === "new").length
-          );
-        }
-
-        setStatus("Solicitudes cargadas correctamente.", "success");
-      } catch (error) {
-        renderRequests([]);
-        setStatus(error.message || "Error al cargar solicitudes.", "error");
-      } finally {
-        loadButton.disabled = false;
-        refreshButton.disabled = false;
-      }
+    if (!response.ok || !result.ok) {
+      throw new Error(result.message || "No se pudieron cargar las solicitudes.");
     }
+
+    renderRequests(result.requests || []);
+    updateSummary(result.summary || {});
+
+    if (totalRequestsEl) {
+      totalRequestsEl.textContent = String(result.summary?.total || result.total || 0);
+    }
+
+    if (newRequestsEl) {
+      newRequestsEl.textContent = String(result.summary?.new || 0);
+    }
+
+    setStatus(
+      `Solicitudes cargadas: ${result.count || 0} de ${result.total || 0}`,
+      "success"
+    );
+  } catch (error) {
+    renderRequests([]);
+    updateSummary({});
+
+    if (totalRequestsEl) {
+      totalRequestsEl.textContent = "0";
+    }
+
+    if (newRequestsEl) {
+      newRequestsEl.textContent = "0";
+    }
+
+    setStatus(error.message || "Error al cargar solicitudes.", "error");
+  } finally {
+    if (loadButton) {
+      loadButton.disabled = false;
+    }
+
+    if (refreshButton) {
+      refreshButton.disabled = false;
+    }
+  }
+}
+
+
+
+statusFilter?.addEventListener("change", loadRequests);
+interestFilter?.addEventListener("change", loadRequests);
+
+searchInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    loadRequests();
+  }
+});
+
+clearFiltersButton?.addEventListener("click", () => {
+  if (statusFilter) statusFilter.value = "all";
+  if (interestFilter) interestFilter.value = "all";
+  if (searchInput) searchInput.value = "";
+
+  loadRequests();
+});
 
     loadButton?.addEventListener("click", loadRequests);
     refreshButton?.addEventListener("click", loadRequests);
