@@ -45,6 +45,19 @@ export default {
 }
 
 
+
+
+    if (url.pathname === "/admin/requests/notes" && request.method === "GET") {
+  return handleAdminListRequestNotes(request, env);
+}
+
+if (url.pathname === "/admin/requests/notes" && request.method === "POST") {
+  return handleAdminCreateRequestNote(request, env);
+}
+
+
+
+
     /*
       Rutas reservadas para fases futuras de SmartPozo360.
       Se dejan vivas para no romper la estructura del proyecto.
@@ -660,6 +673,193 @@ function escapeHtml(value) {
 
 
 
+
+
+    async function handleAdminListRequestNotes(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  const url = new URL(request.url);
+  const requestId = cleanText(url.searchParams.get("requestId") || "", 80);
+
+  if (!requestId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_REQUEST_ID",
+      message: "Falta el ID de la solicitud."
+    }, 400);
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT
+      id,
+      company_name,
+      contact_name
+    FROM enterprise_requests
+    WHERE id = ?
+    LIMIT 1
+  `)
+    .bind(requestId)
+    .first();
+
+  if (!existing) {
+    return corsResponse({
+      ok: false,
+      code: "REQUEST_NOT_FOUND",
+      message: "No se encontró la solicitud."
+    }, 404);
+  }
+
+  const result = await env.DB.prepare(`
+    SELECT
+      id,
+      request_id,
+      note,
+      actor_user_id,
+      created_at
+    FROM request_notes
+    WHERE request_id = ?
+    ORDER BY created_at DESC
+    LIMIT 20
+  `)
+    .bind(requestId)
+    .all();
+
+  return corsResponse({
+    ok: true,
+    request: existing,
+    count: (result.results || []).length,
+    notes: result.results || []
+  });
+}
+
+async function handleAdminCreateRequestNote(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const requestId = cleanText(body.requestId, 80);
+  const note = cleanText(body.note, 1200);
+
+  if (!requestId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_REQUEST_ID",
+      message: "Falta el ID de la solicitud."
+    }, 400);
+  }
+
+  if (!note) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_NOTE",
+      message: "La nota interna no puede estar vacía."
+    }, 400);
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT
+      id,
+      company_name,
+      contact_name,
+      status
+    FROM enterprise_requests
+    WHERE id = ?
+    LIMIT 1
+  `)
+    .bind(requestId)
+    .first();
+
+  if (!existing) {
+    return corsResponse({
+      ok: false,
+      code: "REQUEST_NOT_FOUND",
+      message: "No se encontró la solicitud."
+    }, 404);
+  }
+
+  const noteId = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  await env.DB.prepare(`
+    INSERT INTO request_notes (
+      id,
+      request_id,
+      note,
+      actor_user_id,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?)
+  `)
+    .bind(
+      noteId,
+      requestId,
+      note,
+      "temporary-admin",
+      now
+    )
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      "temporary-admin",
+      "create_request_note",
+      "enterprise_requests",
+      requestId,
+      JSON.stringify({
+        noteId,
+        companyName: existing.company_name,
+        contactName: existing.contact_name,
+        status: existing.status || "new",
+        note
+      }),
+      now
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    id: noteId,
+    requestId,
+    message: "Nota interna registrada correctamente.",
+    createdAt: now
+  });
+}
 
 
 function validateAdminRequest(request, env) {
