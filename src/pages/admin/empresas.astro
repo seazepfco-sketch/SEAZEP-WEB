@@ -1,0 +1,627 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import Header from "../../components/Header.astro";
+import Footer from "../../components/Footer.astro";
+import SectionTitle from "../../components/SectionTitle.astro";
+---
+
+<BaseLayout title="Empresas ADM | SEAZEP">
+  <Header active="admin" />
+
+  <main>
+    <section class="section">
+      <SectionTitle
+        eyebrow="ADM SEAZEP"
+        title="Gestión de empresas y clientes."
+        text="Administra empresas registradas, clientes activos, prospectos comerciales y entidades asociadas a usuarios, manuales y futuras licencias."
+      />
+
+      <div class="admin-access-panel">
+        <div>
+          <h3>Acceso temporal ADM</h3>
+          <p>
+            Ingrese la clave administrativa para consultar y gestionar empresas.
+            Esta clave corresponde al secreto ADMIN_API_KEY del Worker.
+          </p>
+        </div>
+
+        <div class="admin-key-form">
+          <input
+            class="input"
+            id="adminApiKey"
+            type="password"
+            placeholder="Clave ADM temporal"
+            autocomplete="off"
+          />
+
+          <button class="btn btn-primary" id="loadCompaniesButton" type="button">
+            Cargar empresas
+          </button>
+
+          <a class="btn btn-ghost" href="/admin/dashboard">
+            Solicitudes
+          </a>
+
+          <a class="btn btn-ghost" href="/admin/usuarios">
+            Usuarios
+          </a>
+        </div>
+
+        <p id="adminCompaniesStatus" class="form-status" aria-live="polite"></p>
+      </div>
+
+      <section class="admin-filter-panel company-create-panel">
+        <div class="admin-filter-header">
+          <div>
+            <span class="eyebrow">Nueva empresa</span>
+            <h3>Registrar empresa o cliente.</h3>
+          </div>
+        </div>
+
+        <form class="company-form-grid" id="createCompanyForm" autocomplete="off">
+          <input
+            class="input"
+            name="name"
+            placeholder="Nombre comercial de la empresa *"
+            required
+          />
+
+          <input
+            class="input"
+            name="legalName"
+            placeholder="Razón social"
+          />
+
+          <input
+            class="input"
+            name="taxId"
+            placeholder="RFC / identificación fiscal"
+          />
+
+          <input
+            class="input"
+            name="contactName"
+            placeholder="Nombre del contacto"
+          />
+
+          <input
+            class="input"
+            name="contactEmail"
+            type="email"
+            placeholder="Correo del contacto"
+            autocomplete="off"
+          />
+
+          <input
+            class="input"
+            name="contactPhone"
+            placeholder="Teléfono del contacto"
+          />
+
+          <input
+            class="input"
+            name="city"
+            placeholder="Ciudad"
+          />
+
+          <input
+            class="input"
+            name="state"
+            placeholder="Estado"
+          />
+
+          <input
+            class="input"
+            name="country"
+            placeholder="País"
+            value="México"
+          />
+
+          <select class="input" name="status">
+            <option value="lead">Prospecto</option>
+            <option value="active">Activa</option>
+            <option value="suspended">Suspendida</option>
+            <option value="archived">Archivada</option>
+          </select>
+
+          <textarea
+            class="input company-notes-field"
+            name="notes"
+            placeholder="Notas internas de la empresa"
+            rows="4"
+          ></textarea>
+
+          <button class="btn btn-primary" type="submit" id="createCompanyButton">
+            Crear empresa
+          </button>
+        </form>
+      </section>
+
+      <section class="admin-filter-panel">
+        <div class="admin-filter-header">
+          <div>
+            <span class="eyebrow">Filtros ADM</span>
+            <h3>Seguimiento de empresas</h3>
+          </div>
+
+          <button class="btn btn-secondary" type="button" id="clearCompanyFiltersButton">
+            Limpiar filtros
+          </button>
+        </div>
+
+        <div class="admin-filter-grid">
+          <label class="admin-filter-field">
+            <span>Estado</span>
+            <select class="input" id="companyStatusFilter">
+              <option value="all">Todos los estados</option>
+              <option value="lead">Prospectos</option>
+              <option value="active">Activas</option>
+              <option value="suspended">Suspendidas</option>
+              <option value="archived">Archivadas</option>
+            </select>
+          </label>
+
+          <label class="admin-filter-field admin-filter-search">
+            <span>Buscar</span>
+            <input
+              class="input"
+              id="companySearchInput"
+              placeholder="Empresa, RFC, contacto, correo, ciudad o notas"
+            />
+          </label>
+        </div>
+
+        <div class="admin-summary-grid companies-summary-grid">
+          <article class="admin-summary-card">
+            <span>Total</span>
+            <strong id="summaryCompaniesTotal">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Prospectos</span>
+            <strong id="summaryCompaniesLead">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Activas</span>
+            <strong id="summaryCompaniesActive">0</strong>
+          </article>
+
+          <article class="admin-summary-card danger">
+            <span>Suspendidas</span>
+            <strong id="summaryCompaniesSuspended">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Archivadas</span>
+            <strong id="summaryCompaniesArchived">0</strong>
+          </article>
+        </div>
+      </section>
+
+      <section class="admin-requests-section">
+        <div class="admin-section-header">
+          <div>
+            <span class="eyebrow">Empresas registradas</span>
+            <h2>Clientes y prospectos SEAZEP.</h2>
+          </div>
+
+          <button class="btn btn-ghost" id="refreshCompaniesButton" type="button">
+            Actualizar
+          </button>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Registro</th>
+                <th>Empresa</th>
+                <th>Contacto</th>
+                <th>Ubicación</th>
+                <th>RFC</th>
+                <th>Estado</th>
+                <th>Notas</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+
+            <tbody id="companiesTableBody">
+              <tr>
+                <td colspan="8" class="admin-empty">
+                  Ingrese la clave ADM y presione “Cargar empresas”.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <Footer />
+
+  <script>
+    const ADMIN_COMPANIES_BASE_URL = "https://seazep-api.seazepfco.workers.dev/admin/companies";
+    const ADMIN_UPDATE_COMPANY_STATUS_URL = "https://seazep-api.seazepfco.workers.dev/admin/companies/update-status";
+
+    const adminKeyInput = document.getElementById("adminApiKey");
+    const loadCompaniesButton = document.getElementById("loadCompaniesButton");
+    const refreshCompaniesButton = document.getElementById("refreshCompaniesButton");
+    const statusEl = document.getElementById("adminCompaniesStatus");
+    const companiesTableBody = document.getElementById("companiesTableBody");
+
+    const createCompanyForm = document.getElementById("createCompanyForm");
+    const createCompanyButton = document.getElementById("createCompanyButton");
+
+    const companyStatusFilter = document.getElementById("companyStatusFilter");
+    const companySearchInput = document.getElementById("companySearchInput");
+    const clearCompanyFiltersButton = document.getElementById("clearCompanyFiltersButton");
+
+    const summaryCompaniesTotal = document.getElementById("summaryCompaniesTotal");
+    const summaryCompaniesLead = document.getElementById("summaryCompaniesLead");
+    const summaryCompaniesActive = document.getElementById("summaryCompaniesActive");
+    const summaryCompaniesSuspended = document.getElementById("summaryCompaniesSuspended");
+    const summaryCompaniesArchived = document.getElementById("summaryCompaniesArchived");
+
+    function getAdminKey() {
+      return String(adminKeyInput?.value || "").trim();
+    }
+
+    function setStatus(message, type = "") {
+      if (!statusEl) return;
+      statusEl.textContent = message;
+      statusEl.className = type ? `form-status ${type}` : "form-status";
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatDate(value) {
+      if (!value) return "N/D";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) {
+        return value;
+      }
+
+      return date.toLocaleString("es-MX", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function getCompanyStatusLabel(status) {
+      const labels = {
+        lead: "Prospecto",
+        active: "Activa",
+        suspended: "Suspendida",
+        archived: "Archivada"
+      };
+
+      return labels[status] || status || "Prospecto";
+    }
+
+    function getCompanyStatusClass(status) {
+      return `status-${String(status || "lead").replace(/[^a-z0-9_-]/gi, "")}`;
+    }
+
+    function buildCompaniesUrl() {
+      const params = new URLSearchParams();
+
+      params.set("limit", "50");
+
+      const status = String(companyStatusFilter?.value || "all").trim();
+      const search = String(companySearchInput?.value || "").trim();
+
+      if (status && status !== "all") {
+        params.set("status", status);
+      }
+
+      if (search) {
+        params.set("search", search);
+      }
+
+      return `${ADMIN_COMPANIES_BASE_URL}?${params.toString()}`;
+    }
+
+    function updateCompanySummary(summary = {}) {
+      if (summaryCompaniesTotal) summaryCompaniesTotal.textContent = String(summary.total || 0);
+      if (summaryCompaniesLead) summaryCompaniesLead.textContent = String(summary.lead || 0);
+      if (summaryCompaniesActive) summaryCompaniesActive.textContent = String(summary.active || 0);
+      if (summaryCompaniesSuspended) summaryCompaniesSuspended.textContent = String(summary.suspended || 0);
+      if (summaryCompaniesArchived) summaryCompaniesArchived.textContent = String(summary.archived || 0);
+    }
+
+    function buildCompanyActionButtons(company) {
+      const currentStatus = company.status || "lead";
+
+      const actions = [
+        { status: "active", label: "Activar", className: "ok" },
+        { status: "suspended", label: "Suspender", className: "danger" },
+        { status: "lead", label: "Prospecto", className: "warn" },
+        { status: "archived", label: "Archivar", className: "info" }
+      ];
+
+      return `
+        <div class="admin-action-buttons">
+          ${actions.map((action) => `
+            <button
+              class="admin-mini-btn ${action.className}"
+              type="button"
+              data-company-id="${escapeHtml(company.id)}"
+              data-next-status="${escapeHtml(action.status)}"
+              ${currentStatus === action.status ? "disabled" : ""}
+            >
+              ${escapeHtml(action.label)}
+            </button>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    function renderCompanies(companies) {
+      if (!companiesTableBody) return;
+
+      if (!companies.length) {
+        companiesTableBody.innerHTML = `
+          <tr>
+            <td colspan="8" class="admin-empty">
+              No hay empresas registradas con esos filtros.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      companiesTableBody.innerHTML = companies.map((company) => `
+        <tr>
+          <td>${escapeHtml(formatDate(company.created_at))}</td>
+
+          <td>
+            <strong>${escapeHtml(company.name || "Sin nombre")}</strong>
+            <small>${escapeHtml(company.legal_name || "Sin razón social")}</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(company.contact_name || "Sin contacto")}</strong>
+            <small>${escapeHtml(company.contact_email || "Sin correo")}</small>
+            <small>${escapeHtml(company.contact_phone || "Sin teléfono")}</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(company.city || "Sin ciudad")}</strong>
+            <small>${escapeHtml(company.state || "Sin estado")}</small>
+            <small>${escapeHtml(company.country || "Sin país")}</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(company.tax_id || "N/D")}</strong>
+            <small>ID: ${escapeHtml(String(company.id || "").slice(0, 8))}...</small>
+          </td>
+
+          <td>
+            <span class="admin-status-pill ${getCompanyStatusClass(company.status)}">
+              ${escapeHtml(getCompanyStatusLabel(company.status))}
+            </span>
+          </td>
+
+          <td>${escapeHtml(company.notes || "Sin notas")}</td>
+
+          <td>${buildCompanyActionButtons(company)}</td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadCompanies() {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus("Ingrese la clave ADM para cargar empresas.", "error");
+        return;
+      }
+
+      setStatus("Cargando empresas...");
+
+      if (loadCompaniesButton) loadCompaniesButton.disabled = true;
+      if (refreshCompaniesButton) refreshCompaniesButton.disabled = true;
+
+      try {
+        const response = await fetch(buildCompaniesUrl(), {
+          method: "GET",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey
+          }
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudieron cargar las empresas.");
+        }
+
+        renderCompanies(result.companies || []);
+        updateCompanySummary(result.summary || {});
+
+        setStatus(
+          `Empresas cargadas: ${result.count || 0} de ${result.total || 0}`,
+          "success"
+        );
+      } catch (error) {
+        renderCompanies([]);
+        updateCompanySummary({});
+        setStatus(error.message || "Error al cargar empresas.", "error");
+      } finally {
+        if (loadCompaniesButton) loadCompaniesButton.disabled = false;
+        if (refreshCompaniesButton) refreshCompaniesButton.disabled = false;
+      }
+    }
+
+    async function createCompany(event) {
+      event.preventDefault();
+
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus("Ingrese la clave ADM antes de crear una empresa.", "error");
+        return;
+      }
+
+      if (!createCompanyForm || !createCompanyButton) return;
+
+      const formData = new FormData(createCompanyForm);
+
+      const payload = {
+        name: String(formData.get("name") || "").trim(),
+        legalName: String(formData.get("legalName") || "").trim(),
+        taxId: String(formData.get("taxId") || "").trim(),
+        contactName: String(formData.get("contactName") || "").trim(),
+        contactEmail: String(formData.get("contactEmail") || "").trim(),
+        contactPhone: String(formData.get("contactPhone") || "").trim(),
+        city: String(formData.get("city") || "").trim(),
+        state: String(formData.get("state") || "").trim(),
+        country: String(formData.get("country") || "").trim(),
+        status: String(formData.get("status") || "lead").trim(),
+        notes: String(formData.get("notes") || "").trim()
+      };
+
+      if (!payload.name) {
+        setStatus("El nombre comercial de la empresa es obligatorio.", "error");
+        return;
+      }
+
+      setStatus("Creando empresa...");
+      createCompanyButton.disabled = true;
+
+      try {
+        const response = await fetch(ADMIN_COMPANIES_BASE_URL, {
+          method: "POST",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey,
+            "content-type": "text/plain;charset=UTF-8"
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudo crear la empresa.");
+        }
+
+        setStatus("Empresa creada correctamente.", "success");
+        createCompanyForm.reset();
+
+        const countryInput = createCompanyForm.querySelector('input[name="country"]');
+        if (countryInput) countryInput.value = "México";
+
+        await loadCompanies();
+      } catch (error) {
+        setStatus(error.message || "Error al crear empresa.", "error");
+      } finally {
+        createCompanyButton.disabled = false;
+      }
+    }
+
+    async function updateCompanyStatus(companyId, status) {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus("Ingrese la clave ADM antes de actualizar empresas.", "error");
+        return;
+      }
+
+      if (!companyId || !status) {
+        setStatus("Empresa o estado no válido.", "error");
+        return;
+      }
+
+      const note = window.prompt(
+        `Nota opcional para cambiar empresa a: ${getCompanyStatusLabel(status)}`,
+        ""
+      );
+
+      if (note === null) {
+        return;
+      }
+
+      setStatus("Actualizando estado de empresa...");
+
+      try {
+        const response = await fetch(ADMIN_UPDATE_COMPANY_STATUS_URL, {
+          method: "POST",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey,
+            "content-type": "text/plain;charset=UTF-8"
+          },
+          body: JSON.stringify({
+            companyId,
+            status,
+            note
+          })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudo actualizar la empresa.");
+        }
+
+        setStatus("Estado de empresa actualizado correctamente.", "success");
+        await loadCompanies();
+      } catch (error) {
+        setStatus(error.message || "Error al actualizar empresa.", "error");
+      }
+    }
+
+    companiesTableBody?.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-company-id][data-next-status]");
+
+      if (!button) return;
+
+      const companyId = button.dataset.companyId;
+      const status = button.dataset.nextStatus;
+
+      button.disabled = true;
+
+      try {
+        await updateCompanyStatus(companyId, status);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    createCompanyForm?.addEventListener("submit", createCompany);
+
+    companyStatusFilter?.addEventListener("change", loadCompanies);
+
+    companySearchInput?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        loadCompanies();
+      }
+    });
+
+    clearCompanyFiltersButton?.addEventListener("click", () => {
+      if (companyStatusFilter) companyStatusFilter.value = "all";
+      if (companySearchInput) companySearchInput.value = "";
+      loadCompanies();
+    });
+
+    loadCompaniesButton?.addEventListener("click", loadCompanies);
+    refreshCompaniesButton?.addEventListener("click", loadCompanies);
+  </script>
+</BaseLayout>
+

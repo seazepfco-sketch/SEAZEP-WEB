@@ -91,6 +91,21 @@ if (url.pathname === "/admin/users/update-status" && request.method === "POST") 
 
 
 
+    if (url.pathname === "/admin/companies" && request.method === "GET") {
+  return handleAdminListCompanies(request, env);
+}
+
+if (url.pathname === "/admin/companies" && request.method === "POST") {
+  return handleAdminCreateCompany(request, env);
+}
+
+if (url.pathname === "/admin/companies/update-status" && request.method === "POST") {
+  return handleAdminUpdateCompanyStatus(request, env);
+}
+
+
+
+
 
     /*
       Rutas reservadas para fases futuras de SmartPozo360.
@@ -2017,6 +2032,445 @@ function escapeEmailHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+
+  async function handleAdminListCompanies(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  const url = new URL(request.url);
+
+  const status = cleanText(url.searchParams.get("status") || "", 40);
+  const search = cleanText(url.searchParams.get("search") || "", 120);
+
+  const rawLimit = Number(url.searchParams.get("limit") || 50);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(Math.trunc(rawLimit), 1), 100)
+    : 50;
+
+  const whereParts = [];
+  const params = [];
+
+  if (status && status !== "all") {
+    whereParts.push("status = ?");
+    params.push(status);
+  }
+
+  if (search) {
+    const likeSearch = `%${search}%`;
+
+    whereParts.push(`(
+      name LIKE ?
+      OR legal_name LIKE ?
+      OR tax_id LIKE ?
+      OR contact_name LIKE ?
+      OR contact_email LIKE ?
+      OR contact_phone LIKE ?
+      OR city LIKE ?
+      OR state LIKE ?
+      OR country LIKE ?
+      OR status LIKE ?
+      OR notes LIKE ?
+    )`);
+
+    params.push(
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch
+    );
+  }
+
+  const whereSql = whereParts.length
+    ? `WHERE ${whereParts.join(" AND ")}`
+    : "";
+
+  const listSql = `
+    SELECT
+      id,
+      name,
+      legal_name,
+      tax_id,
+      contact_name,
+      contact_email,
+      contact_phone,
+      city,
+      state,
+      country,
+      status,
+      source_request_id,
+      notes,
+      created_at,
+      updated_at
+    FROM companies
+    ${whereSql}
+    ORDER BY COALESCE(updated_at, created_at) DESC
+    LIMIT ${limit}
+  `;
+
+  const countSql = `
+    SELECT COUNT(*) AS total
+    FROM companies
+    ${whereSql}
+  `;
+
+  const listStatement = env.DB.prepare(listSql);
+  const countStatement = env.DB.prepare(countSql);
+
+  const listResult = params.length
+    ? await listStatement.bind(...params).all()
+    : await listStatement.all();
+
+  const countResult = params.length
+    ? await countStatement.bind(...params).first()
+    : await countStatement.first();
+
+  const summaryResult = await env.DB.prepare(`
+    SELECT
+      COALESCE(status, 'lead') AS status,
+      COUNT(*) AS total
+    FROM companies
+    GROUP BY COALESCE(status, 'lead')
+  `).all();
+
+  const totalAllResult = await env.DB.prepare(`
+    SELECT COUNT(*) AS total
+    FROM companies
+  `).first();
+
+  const summary = {
+    total: Number(totalAllResult?.total || 0),
+    lead: 0,
+    active: 0,
+    suspended: 0,
+    archived: 0
+  };
+
+  for (const row of summaryResult.results || []) {
+    const key = row.status || "lead";
+    summary[key] = Number(row.total || 0);
+  }
+
+  return corsResponse({
+    ok: true,
+    count: (listResult.results || []).length,
+    total: Number(countResult?.total || 0),
+    limit,
+    filters: {
+      status: status || "all",
+      search
+    },
+    summary,
+    companies: listResult.results || []
+  });
+}
+
+
+  async function handleAdminCreateCompany(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const name = cleanText(body.name, 180);
+  const legalName = cleanText(body.legalName || "", 220);
+  const taxId = cleanText(body.taxId || "", 80);
+  const contactName = cleanText(body.contactName || "", 160);
+  const contactEmail = normalizeAuthEmail(body.contactEmail || "");
+  const contactPhone = cleanText(body.contactPhone || "", 80);
+  const city = cleanText(body.city || "", 120);
+  const state = cleanText(body.state || "", 120);
+  const country = cleanText(body.country || "México", 120);
+  const status = cleanText(body.status || "lead", 40);
+  const sourceRequestId = cleanText(body.sourceRequestId || "", 80);
+  const notes = cleanText(body.notes || "", 1200);
+
+  const allowedStatuses = [
+    "lead",
+    "active",
+    "suspended",
+    "archived"
+  ];
+
+  if (!name) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_COMPANY_NAME",
+      message: "El nombre de la empresa es obligatorio."
+    }, 400);
+  }
+
+  if (contactEmail && !isValidAuthEmail(contactEmail)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_CONTACT_EMAIL",
+      message: "El correo de contacto no es válido."
+    }, 400);
+  }
+
+  if (!allowedStatuses.includes(status)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_STATUS",
+      message: "Estado de empresa no permitido."
+    }, 400);
+  }
+
+  const now = new Date().toISOString();
+  const companyId = crypto.randomUUID();
+
+  await env.DB.prepare(`
+    INSERT INTO companies (
+      id,
+      name,
+      legal_name,
+      tax_id,
+      contact_name,
+      contact_email,
+      contact_phone,
+      city,
+      state,
+      country,
+      status,
+      source_request_id,
+      notes,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      companyId,
+      name,
+      legalName || null,
+      taxId || null,
+      contactName || null,
+      contactEmail || null,
+      contactPhone || null,
+      city || null,
+      state || null,
+      country || null,
+      status,
+      sourceRequestId || null,
+      notes || null,
+      now,
+      now
+    )
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      "temporary-admin",
+      "admin_company_created",
+      "companies",
+      companyId,
+      JSON.stringify({
+        name,
+        legalName,
+        taxId,
+        contactName,
+        contactEmail,
+        contactPhone,
+        city,
+        state,
+        country,
+        status,
+        sourceRequestId
+      }),
+      now
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    id: companyId,
+    message: "Empresa creada correctamente.",
+    company: {
+      id: companyId,
+      name,
+      legalName,
+      taxId,
+      contactName,
+      contactEmail,
+      contactPhone,
+      city,
+      state,
+      country,
+      status,
+      sourceRequestId,
+      notes,
+      createdAt: now,
+      updatedAt: now
+    }
+  });
+}
+
+
+  async function handleAdminUpdateCompanyStatus(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const companyId = cleanText(body.companyId, 80);
+  const status = cleanText(body.status, 40);
+  const note = cleanText(body.note || "", 800);
+
+  const allowedStatuses = [
+    "lead",
+    "active",
+    "suspended",
+    "archived"
+  ];
+
+  if (!companyId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_COMPANY_ID",
+      message: "Falta el ID de la empresa."
+    }, 400);
+  }
+
+  if (!allowedStatuses.includes(status)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_STATUS",
+      message: "Estado de empresa no permitido."
+    }, 400);
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT
+      id,
+      name,
+      legal_name,
+      contact_email,
+      status
+    FROM companies
+    WHERE id = ?
+    LIMIT 1
+  `)
+    .bind(companyId)
+    .first();
+
+  if (!existing) {
+    return corsResponse({
+      ok: false,
+      code: "COMPANY_NOT_FOUND",
+      message: "No se encontró la empresa."
+    }, 404);
+  }
+
+  const previousStatus = existing.status || "lead";
+  const now = new Date().toISOString();
+
+  await env.DB.prepare(`
+    UPDATE companies
+    SET
+      status = ?,
+      updated_at = ?
+    WHERE id = ?
+  `)
+    .bind(status, now, companyId)
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      "temporary-admin",
+      "admin_company_status_updated",
+      "companies",
+      companyId,
+      JSON.stringify({
+        name: existing.name,
+        legalName: existing.legal_name || "",
+        contactEmail: existing.contact_email || "",
+        previousStatus,
+        newStatus: status,
+        note
+      }),
+      now
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    id: companyId,
+    previousStatus,
+    status,
+    message: "Estado de empresa actualizado correctamente.",
+    updatedAt: now
+  });
+}
+
 
 
 
