@@ -5,23 +5,110 @@ import Footer from "../components/Footer.astro";
 import SectionTitle from "../components/SectionTitle.astro";
 ---
 
-<BaseLayout title="Acceso usuarios | SEAZEP">
+<BaseLayout title="Acceso de usuario | SEAZEP">
   <Header />
 
   <main class="section form-panel">
     <SectionTitle
-      eyebrow="Portal privado"
-      title="Acceso para usuarios registrados."
-      text="Los usuarios autorizados podrán consultar manuales, documentos técnicos y recursos asociados a los softwares o servicios asignados."
+      eyebrow="Acceso"
+      title="Acceso privado a recursos SEAZEP."
+      text="Ingrese con su correo y contraseña. Las cuentas nuevas requieren aprobación administrativa antes de acceder."
     />
 
-    <form class="form-grid">
-      <input class="input" placeholder="Correo electrónico" />
-      <input class="input" placeholder="Contraseña" type="password" />
-      <button class="btn btn-primary" type="button">Iniciar sesión</button>
-      <a class="btn btn-ghost" href="/registro">Crear cuenta de usuario</a>
+    <form class="form-grid" id="loginForm">
+      <input
+        class="input"
+        name="email"
+        type="email"
+        placeholder="Correo electrónico"
+        required
+      />
+
+      <input
+        class="input"
+        name="password"
+        type="password"
+        placeholder="Contraseña"
+        required
+      />
+
+      <!-- Campo oculto antispam. No eliminar. -->
+      <input
+        type="text"
+        name="website"
+        autocomplete="off"
+        tabindex="-1"
+        style="display:none"
+      />
+
+      <button class="btn btn-primary" type="submit" id="loginSubmitButton">
+        Iniciar sesión
+      </button>
+
+      <p id="loginFormStatus" class="form-status" aria-live="polite"></p>
     </form>
   </main>
 
   <Footer />
+
+  <script>
+    const SEAZEP_LOGIN_URL = "https://seazep-api.seazepfco.workers.dev/auth/login";
+
+    const loginForm = document.getElementById("loginForm");
+    const loginStatusEl = document.getElementById("loginFormStatus");
+    const loginSubmitButton = document.getElementById("loginSubmitButton");
+
+    if (loginForm) {
+      loginForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        if (!loginStatusEl || !loginSubmitButton) return;
+
+        const formData = new FormData(loginForm);
+
+        const payload = {
+          email: String(formData.get("email") || "").trim(),
+          password: String(formData.get("password") || ""),
+          website: String(formData.get("website") || "").trim()
+        };
+
+        loginStatusEl.textContent = "Validando acceso...";
+        loginStatusEl.className = "form-status";
+        loginSubmitButton.disabled = true;
+
+        try {
+          const response = await fetch(SEAZEP_LOGIN_URL, {
+            method: "POST",
+            mode: "cors",
+            headers: {
+              "content-type": "text/plain;charset=UTF-8"
+            },
+            body: JSON.stringify(payload)
+          });
+
+          const result = await response.json();
+
+          if (!response.ok || !result.ok) {
+            throw new Error(result.message || "No se pudo iniciar sesión.");
+          }
+
+          localStorage.setItem("seazep_session_token", result.token);
+          localStorage.setItem("seazep_session_expires_at", result.expiresAt);
+          localStorage.setItem("seazep_user", JSON.stringify(result.user));
+
+          loginStatusEl.textContent = "Inicio de sesión correcto. Redirigiendo al panel...";
+          loginStatusEl.className = "form-status success";
+
+          setTimeout(() => {
+            window.location.href = "/app/dashboard";
+          }, 900);
+        } catch (error) {
+          loginStatusEl.textContent = error.message || "Error al iniciar sesión. Intente nuevamente.";
+          loginStatusEl.className = "form-status error";
+        } finally {
+          loginSubmitButton.disabled = false;
+        }
+      });
+    }
+  </script>
 </BaseLayout>

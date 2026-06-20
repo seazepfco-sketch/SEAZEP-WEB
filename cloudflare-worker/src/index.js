@@ -41,6 +41,12 @@ export default {
 }
 
 
+
+    if (url.pathname === "/auth/login" && request.method === "POST") {
+  return handleAuthLogin(request, env);
+}
+
+
     
     if (url.pathname === "/admin/requests" && request.method === "GET") {
       return handleAdminListRequests(request, env);
@@ -1067,6 +1073,266 @@ function bytesToBase64(bytes) {
   }
 
   return btoa(binary);
+}
+
+
+
+    function base64ToBytes(value) {
+  const binary = atob(String(value || ""));
+  const bytes = new Uint8Array(binary.length);
+
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  return bytes;
+}
+
+async function verifyAuthPassword(password, storedHash) {
+  const parts = String(storedHash || "").split("$");
+
+  if (parts.length !== 4) {
+    return false;
+  }
+
+  const [algorithm, iterationsText, saltBase64, hashBase64] = parts;
+
+  if (algorithm !== "pbkdf2_sha256") {
+    return false;
+  }
+
+  const iterations = Number(iterationsText);
+
+  if (!Number.isFinite(iterations) || iterations < 10000) {
+    return false;
+  }
+
+  const saltBytes = base64ToBytes(saltBase64);
+  const expectedHashBytes = base64ToBytes(hashBase64);
+
+  const encoder = new TextEncoder();
+
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"]
+  );
+
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: saltBytes,
+      iterations,
+      hash: "SHA-256"
+    },
+    keyMaterial,
+    expectedHashBytes.length * 8
+  );
+
+  const actualHashBytes = new Uint8Array(derivedBits);
+
+  return constantTimeEqual(actualHashBytes, expectedHashBytes);
+}
+
+function constantTimeEqual(a, b) {
+  if (!a || !b || a.length !== b.length) {
+    return false;
+  }
+
+  let result = 0;
+
+  for (let i = 0; i < a.length; i += 1) {
+    result |= a[i] ^ b[i];
+  }
+
+  return result === 0;
+}
+
+function createSessionToken() {
+  const randomBytes = crypto.getRandomValues(new Uint8Array(32));
+  return `seazep_${bytesToBase64Url(randomBytes)}`;
+}
+
+function bytesToBase64Url(bytes) {
+  return bytesToBase64(bytes)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replaceAll("=", "");
+}
+
+async function sha256Hex(value) {
+  const encoder = new TextEncoder();
+  const hashBuffer = await crypto.subtle.digest("SHA-256", encoder.encode(value));
+  const hashBytes = new Uint8Array(hashBuffer);
+
+  return Array.from(hashBytes)
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+
+  async function handleAuthLogin(request, env) {
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const email = normalizeAuthEmail(body.email);
+  const password = String(body.password || "");
+  const website = cleanText(body.website || "", 120);
+
+  if (website) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_CREDENTIALS",
+      message: "Correo o contraseña incorrectos."
+    }, 401);
+  }
+
+  if (!email || !isValidAuthEmail(email)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_EMAIL",
+      message: "Ingrese un correo electrónico válido."
+    }, 400);
+  }
+
+  if (!password) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_PASSWORD",
+      message: "Ingrese la contraseña."
+    }, 400);
+  }
+
+  const user = await env.DB.prepare(`
+    SELECT
+      id,
+      full_name,
+      email,
+      password_hash,
+      company_name,
+      phone,
+      role,
+      status,
+      source,
+      created_at
+    FROM users
+    WHERE lower(email) = lower(?)
+    LIMIT 1
+  `)
+    .bind(email)
+    .first();
+
+  if (!user) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_CREDENTIALS",
+      message: "Correo o contraseña incorrectos."
+    }, 401);
+  }
+
+  const passwordOk = await verifyAuthPassword(password, user.password_hash);
+
+  if (!passwordOk) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_CREDENTIALS",
+      message: "Correo o contraseña incorrectos."
+    }, 401);
+  }
+
+  if ((user.status || "pending") !== "active") {
+    return corsResponse({
+      ok: false,
+      code: "USER_NOT_ACTIVE",
+      message: "Su cuenta aún está pendiente de aprobación por SEAZEP."
+    }, 403);
+  }
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+
+  const expiresAt = new Date(now.getTime() + 1000 * 60 * 60 * 12).toISOString();
+  const sessionId = crypto.randomUUID();
+  const sessionToken = createSessionToken();
+  const tokenHash = await sha256Hex(sessionToken);
+
+  await env.DB.prepare(`
+    INSERT INTO user_sessions (
+      id,
+      user_id,
+      token_hash,
+      status,
+      created_at,
+      expires_at,
+      last_seen_at,
+      user_agent
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      sessionId,
+      user.id,
+      tokenHash,
+      "active",
+      nowIso,
+      expiresAt,
+      nowIso,
+      cleanText(request.headers.get("user-agent") || "", 500)
+    )
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      user.id,
+      "auth_login_success",
+      "users",
+      user.id,
+      JSON.stringify({
+        email: user.email,
+        role: user.role || "user",
+        status: user.status || "active",
+        sessionId
+      }),
+      nowIso
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    message: "Inicio de sesión correcto.",
+    token: sessionToken,
+    expiresAt,
+    user: {
+      id: user.id,
+      fullName: user.full_name,
+      email: user.email,
+      companyName: user.company_name || "",
+      phone: user.phone || "",
+      role: user.role || "user",
+      status: user.status || "active"
+    }
+  });
 }
 
 
