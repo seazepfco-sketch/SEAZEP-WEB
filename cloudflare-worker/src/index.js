@@ -47,6 +47,17 @@ export default {
 }
 
 
+    if (url.pathname === "/auth/forgot-password" && request.method === "POST") {
+  return handleAuthForgotPassword(request, env);
+}
+
+if (url.pathname === "/auth/reset-password" && request.method === "POST") {
+  return handleAuthResetPassword(request, env);
+}
+
+
+
+
     
     if (url.pathname === "/admin/requests" && request.method === "GET") {
       return handleAdminListRequests(request, env);
@@ -1603,7 +1614,410 @@ async function sha256Hex(value) {
   });
 }
 
-  
+
+
+  async function handleAuthForgotPassword(request, env) {
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const email = normalizeAuthEmail(body.email);
+  const website = cleanText(body.website || "", 120);
+
+  if (website) {
+    return corsResponse({
+      ok: true,
+      message: "Si el correo está registrado, enviaremos instrucciones de recuperación."
+    });
+  }
+
+  if (!email || !isValidAuthEmail(email)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_EMAIL",
+      message: "Ingrese un correo electrónico válido."
+    }, 400);
+  }
+
+  const safeMessage = "Si el correo está registrado, enviaremos instrucciones de recuperación.";
+
+  const user = await env.DB.prepare(`
+    SELECT
+      id,
+      full_name,
+      email,
+      status
+    FROM users
+    WHERE lower(email) = lower(?)
+    LIMIT 1
+  `)
+    .bind(email)
+    .first();
+
+  if (!user) {
+    return corsResponse({
+      ok: true,
+      message: safeMessage
+    });
+  }
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const expiresAt = new Date(now.getTime() + 1000 * 60 * 30).toISOString();
+
+  await env.DB.prepare(`
+    UPDATE password_reset_tokens
+    SET status = 'revoked'
+    WHERE user_id = ?
+      AND status = 'active'
+  `)
+    .bind(user.id)
+    .run();
+
+  const resetId = crypto.randomUUID();
+  const resetToken = createSessionToken();
+  const tokenHash = await sha256Hex(resetToken);
+
+  await env.DB.prepare(`
+    INSERT INTO password_reset_tokens (
+      id,
+      user_id,
+      requested_email,
+      token_hash,
+      status,
+      created_at,
+      expires_at,
+      used_at,
+      user_agent
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      resetId,
+      user.id,
+      email,
+      tokenHash,
+      "active",
+      nowIso,
+      expiresAt,
+      null,
+      cleanText(request.headers.get("user-agent") || "", 500)
+    )
+    .run();
+
+  const frontendOrigin = env.FRONTEND_ORIGIN || "https://seazep-web.pages.dev";
+  const resetUrl = `${frontendOrigin}/restablecer-contrasena?token=${encodeURIComponent(resetToken)}`;
+
+  const emailResult = await sendPasswordResetEmail(env, {
+    to: user.email,
+    fullName: user.full_name || "Usuario SEAZEP",
+    resetUrl,
+    expiresAt
+  });
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      user.id,
+      emailResult.ok ? "password_reset_email_sent" : "password_reset_email_failed",
+      "users",
+      user.id,
+      JSON.stringify({
+        email: user.email,
+        resetId,
+        expiresAt,
+        emailOk: emailResult.ok,
+        emailError: emailResult.error || null
+      }),
+      nowIso
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    message: safeMessage
+  });
+}
+
+
+  async function handleAuthResetPassword(request, env) {
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const token = String(body.token || "").trim();
+  const password = String(body.password || "");
+  const passwordConfirm = String(body.passwordConfirm || "");
+  const website = cleanText(body.website || "", 120);
+
+  if (website) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_TOKEN",
+      message: "El enlace de recuperación no es válido."
+    }, 400);
+  }
+
+  if (!token) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_TOKEN",
+      message: "Falta el token de recuperación."
+    }, 400);
+  }
+
+  if (!password || password.length < 8) {
+    return corsResponse({
+      ok: false,
+      code: "WEAK_PASSWORD",
+      message: "La nueva contraseña debe tener al menos 8 caracteres."
+    }, 400);
+  }
+
+  if (password !== passwordConfirm) {
+    return corsResponse({
+      ok: false,
+      code: "PASSWORD_MISMATCH",
+      message: "Las contraseñas no coinciden."
+    }, 400);
+  }
+
+  const tokenHash = await sha256Hex(token);
+  const now = new Date();
+  const nowIso = now.toISOString();
+
+  const resetRecord = await env.DB.prepare(`
+    SELECT
+      prt.id,
+      prt.user_id,
+      prt.requested_email,
+      prt.status,
+      prt.expires_at,
+      u.email,
+      u.full_name,
+      u.status AS user_status
+    FROM password_reset_tokens prt
+    INNER JOIN users u ON u.id = prt.user_id
+    WHERE prt.token_hash = ?
+    LIMIT 1
+  `)
+    .bind(tokenHash)
+    .first();
+
+  if (!resetRecord) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_TOKEN",
+      message: "El enlace de recuperación no es válido."
+    }, 400);
+  }
+
+  if (resetRecord.status !== "active") {
+    return corsResponse({
+      ok: false,
+      code: "TOKEN_ALREADY_USED",
+      message: "El enlace ya fue utilizado o fue revocado."
+    }, 400);
+  }
+
+  const expiresDate = new Date(resetRecord.expires_at);
+
+  if (Number.isNaN(expiresDate.getTime()) || expiresDate <= now) {
+    await env.DB.prepare(`
+      UPDATE password_reset_tokens
+      SET status = 'expired'
+      WHERE id = ?
+    `)
+      .bind(resetRecord.id)
+      .run();
+
+    return corsResponse({
+      ok: false,
+      code: "TOKEN_EXPIRED",
+      message: "El enlace de recuperación ya expiró. Solicite uno nuevo."
+    }, 400);
+  }
+
+  const passwordHash = await hashAuthPassword(password);
+
+  await env.DB.prepare(`
+    UPDATE users
+    SET
+      password_hash = ?,
+      updated_at = ?
+    WHERE id = ?
+  `)
+    .bind(passwordHash, nowIso, resetRecord.user_id)
+    .run();
+
+  await env.DB.prepare(`
+    UPDATE password_reset_tokens
+    SET
+      status = 'used',
+      used_at = ?
+    WHERE id = ?
+  `)
+    .bind(nowIso, resetRecord.id)
+    .run();
+
+  await env.DB.prepare(`
+    UPDATE user_sessions
+    SET status = 'revoked'
+    WHERE user_id = ?
+      AND status = 'active'
+  `)
+    .bind(resetRecord.user_id)
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      resetRecord.user_id,
+      "password_reset_success",
+      "users",
+      resetRecord.user_id,
+      JSON.stringify({
+        email: resetRecord.email,
+        resetId: resetRecord.id
+      }),
+      nowIso
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    message: "Contraseña actualizada correctamente. Ya puede iniciar sesión."
+  });
+}
+
+
+
+  async function sendPasswordResetEmail(env, data) {
+  if (!env.RESEND_API_KEY) {
+    return {
+      ok: false,
+      error: "RESEND_API_KEY no configurada."
+    };
+  }
+
+  const fromEmail = env.RESEND_FROM_EMAIL || "SEAZEP <onboarding@resend.dev>";
+
+  const subject = "Recuperación de contraseña SEAZEP";
+
+  const text = `
+Hola ${data.fullName},
+
+Recibimos una solicitud para restablecer su contraseña en SEAZEP-WEB.
+
+Abra este enlace para crear una nueva contraseña:
+${data.resetUrl}
+
+Este enlace vence en 30 minutos.
+
+Si usted no solicitó este cambio, puede ignorar este correo.
+
+SEAZEP Agua y Energía
+`.trim();
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; color: #0f172a; line-height: 1.6;">
+      <h2>Recuperación de contraseña SEAZEP</h2>
+      <p>Hola <strong>${escapeEmailHtml(data.fullName)}</strong>,</p>
+      <p>Recibimos una solicitud para restablecer su contraseña en SEAZEP-WEB.</p>
+      <p>
+        <a href="${escapeEmailHtml(data.resetUrl)}"
+           style="display:inline-block;padding:12px 18px;background:#0284c7;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:bold;">
+          Restablecer contraseña
+        </a>
+      </p>
+      <p>Este enlace vence en <strong>30 minutos</strong>.</p>
+      <p>Si usted no solicitó este cambio, puede ignorar este correo.</p>
+      <hr />
+      <p style="font-size:12px;color:#475569;">SEAZEP Agua y Energía</p>
+    </div>
+  `.trim();
+
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "authorization": `Bearer ${env.RESEND_API_KEY}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        from: fromEmail,
+        to: [data.to],
+        subject,
+        text,
+        html
+      })
+    });
+
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      return {
+        ok: false,
+        error: result.message || `Resend respondió ${response.status}`
+      };
+    }
+
+    return {
+      ok: true,
+      id: result.id || null
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error.message || "Error al enviar correo."
+    };
+  }
+}
+
+function escapeEmailHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 
 
 function validateAdminRequest(request, env) {
