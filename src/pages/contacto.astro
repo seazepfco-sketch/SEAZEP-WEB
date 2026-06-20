@@ -15,23 +15,135 @@ import SectionTitle from "../components/SectionTitle.astro";
       text="Complete la información para que SEAZEP pueda evaluar la solicitud y contactar a su empresa."
     />
 
-    <form class="form-grid">
-      <input class="input" placeholder="Nombre completo" />
-      <input class="input" placeholder="Empresa / organismo" />
-      <input class="input" placeholder="Correo electrónico" />
-      <input class="input" placeholder="Teléfono" />
-      <select class="input">
-        <option>Servicio de interés</option>
-        <option>SmartPozo360</option>
-        <option>Diagnóstico electromecánico</option>
-        <option>Micromedición</option>
-        <option>Macromedición</option>
-        <option>Fugas no visibles</option>
-        <option>Automatización y control</option>
-      </select>
-      <textarea class="input" placeholder="Describa brevemente su necesidad técnica o comercial"></textarea>
-      <button class="btn btn-primary" type="button">Enviar solicitud</button>
-    </form>
+    <form class="form-grid" id="contactRequestForm">
+  <input
+    class="input"
+    name="contactName"
+    placeholder="Nombre completo"
+    required
+  />
+
+  <input
+    class="input"
+    name="companyName"
+    placeholder="Empresa / organismo"
+    required
+  />
+
+  <input
+    class="input"
+    name="contactPosition"
+    placeholder="Cargo / área"
+  />
+
+  <input
+    class="input"
+    name="contactEmail"
+    placeholder="Correo electrónico"
+    type="email"
+    required
+  />
+
+  <input
+    class="input"
+    name="contactPhone"
+    placeholder="Teléfono"
+  />
+
+  <select class="input" name="interestArea" required>
+    <option value="">Servicio de interés</option>
+    <option value="SmartPozo360">SmartPozo360</option>
+    <option value="Diagnóstico electromecánico">Diagnóstico electromecánico</option>
+    <option value="Micromedición">Micromedición</option>
+    <option value="Macromedición">Macromedición</option>
+    <option value="Fugas no visibles">Fugas no visibles</option>
+    <option value="Automatización y control">Automatización y control</option>
+  </select>
+
+  <textarea
+    class="input"
+    name="message"
+    placeholder="Describa brevemente su necesidad técnica o comercial"
+  ></textarea>
+
+  <!-- Campo oculto antispam. No eliminar. -->
+  <input
+    type="text"
+    name="website"
+    autocomplete="off"
+    tabindex="-1"
+    style="display:none"
+  />
+
+  <button class="btn btn-primary" type="submit" id="contactSubmitButton">
+    Enviar solicitud
+  </button>
+
+  <p id="contactFormStatus" class="form-status" aria-live="polite"></p>
+</form>
+
+
+  <script>
+  const SEAZEP_API_URL = "https://seazep-api.seazepfco.workers.dev/requests";
+
+  const form = document.getElementById("contactRequestForm");
+  const statusEl = document.getElementById("contactFormStatus");
+  const submitButton = document.getElementById("contactSubmitButton");
+
+  if (form) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      if (!statusEl || !submitButton) return;
+
+      const formData = new FormData(form);
+
+      const payload = {
+        companyName: String(formData.get("companyName") || "").trim(),
+        contactName: String(formData.get("contactName") || "").trim(),
+        contactPosition: String(formData.get("contactPosition") || "").trim(),
+        contactEmail: String(formData.get("contactEmail") || "").trim(),
+        contactPhone: String(formData.get("contactPhone") || "").trim(),
+        interestArea: String(formData.get("interestArea") || "").trim(),
+        message: String(formData.get("message") || "").trim(),
+        website: String(formData.get("website") || "").trim()
+      };
+
+      statusEl.textContent = "Enviando solicitud...";
+      statusEl.className = "form-status";
+      submitButton.disabled = true;
+
+      try {
+        const response = await fetch(SEAZEP_API_URL, {
+  method: "POST",
+  mode: "cors",
+  headers: {
+    "content-type": "text/plain;charset=UTF-8"
+  },
+  body: JSON.stringify(payload)
+});
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudo enviar la solicitud.");
+        }
+
+        statusEl.textContent = "Solicitud enviada correctamente. SEAZEP se pondrá en contacto con usted.";
+        statusEl.className = "form-status success";
+        form.reset();
+      } catch (error) {
+        statusEl.textContent = error.message || "Error al enviar la solicitud. Intente nuevamente.";
+        statusEl.className = "form-status error";
+      } finally {
+        submitButton.disabled = false;
+      }
+    });
+  }
+</script>
+
+
+
   </main>
 
   <Footer />

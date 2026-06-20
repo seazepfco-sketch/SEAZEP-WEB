@@ -1,0 +1,14 @@
+name = "seazep-api"
+main = "src/index.js"
+compatibility_date = "2026-06-19"
+
+[vars]
+APP_NAME = "SEAZEP API"
+APP_ENV = "production"
+FRONTEND_ORIGIN = "https://seazep-web.pages.dev"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "seazep-db"
+database_id = "c9f8c056-8050-495d-8fcd-44882c8df22b"
+
