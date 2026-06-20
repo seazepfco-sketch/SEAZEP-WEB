@@ -796,3 +796,162 @@ textarea.input {
   opacity: 0.65;
   cursor: not-allowed;
 }
+
+
+
+/* =========================================================
+   ADMIN — SOLICITUDES SEAZEP
+========================================================= */
+
+.admin-access-panel {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  margin-top: 28px;
+  padding: 28px;
+  border-radius: 28px;
+  border: 1px solid rgba(56, 189, 248, .22);
+  background:
+    radial-gradient(circle at top left, rgba(56, 189, 248, .12), transparent 42%),
+    linear-gradient(180deg, rgba(8, 36, 62, .82), rgba(2, 8, 23, .92));
+}
+
+.admin-access-panel h3 {
+  margin: 0 0 8px;
+  color: #f4fbff;
+  font-size: 28px;
+}
+
+.admin-access-panel p {
+  margin: 0;
+  color: rgba(219, 237, 250, .78);
+  line-height: 1.65;
+}
+
+.admin-key-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+}
+
+.admin-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+  margin-top: 28px;
+}
+
+.admin-summary-grid .card h3 {
+  color: #67e8f9;
+  font-size: 42px;
+}
+
+.admin-requests-section {
+  margin-top: 34px;
+  padding: 28px;
+  border-radius: 30px;
+  border: 1px solid rgba(56, 189, 248, .22);
+  background:
+    linear-gradient(180deg, rgba(4, 24, 43, .86), rgba(2, 8, 23, .94));
+}
+
+.admin-section-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 22px;
+}
+
+.admin-section-header h2 {
+  margin: 8px 0 0;
+  color: #f4fbff;
+  font-size: clamp(30px, 4vw, 52px);
+  line-height: .98;
+  letter-spacing: -.05em;
+}
+
+.admin-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: 22px;
+  border: 1px solid rgba(56, 189, 248, .18);
+}
+
+.admin-table {
+  width: 100%;
+  min-width: 1180px;
+  border-collapse: collapse;
+  background: rgba(2, 8, 23, .68);
+}
+
+.admin-table th {
+  padding: 16px;
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: #a5f3fc;
+  background: rgba(14, 116, 144, .22);
+  border-bottom: 1px solid rgba(56, 189, 248, .18);
+}
+
+.admin-table td {
+  padding: 16px;
+  vertical-align: top;
+  color: rgba(226, 243, 255, .9);
+  border-bottom: 1px solid rgba(56, 189, 248, .12);
+}
+
+.admin-table td strong {
+  display: block;
+  color: #f8fdff;
+  font-weight: 800;
+}
+
+.admin-table td small {
+  display: block;
+  margin-top: 4px;
+  color: rgba(186, 230, 253, .68);
+  font-size: 12px;
+}
+
+.admin-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 11px;
+  border-radius: 999px;
+  color: #ccfbf1;
+  background: rgba(20, 184, 166, .14);
+  border: 1px solid rgba(20, 184, 166, .36);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.admin-message-cell {
+  max-width: 320px;
+  line-height: 1.55;
+}
+
+.admin-empty {
+  text-align: center;
+  color: rgba(219, 237, 250, .7);
+  padding: 28px !important;
+}
+
+@media (max-width: 980px) {
+  .admin-key-form,
+  .admin-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-section-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+

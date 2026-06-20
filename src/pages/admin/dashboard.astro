@@ -1,86 +1,240 @@
 ---
 import BaseLayout from "../../layouts/BaseLayout.astro";
+import Header from "../../components/Header.astro";
+import Footer from "../../components/Footer.astro";
+import SectionTitle from "../../components/SectionTitle.astro";
 ---
 
-<BaseLayout title="Dashboard Admin | SEAZEP">
-  <main class="portal-layout">
-    <aside class="portal-sidebar">
-      <img src="/assets/seazep-logo.png" alt="SEAZEP" />
-      <a class="active" href="/admin/dashboard">Dashboard</a>
-      <a href="#empresas">Empresas</a>
-      <a href="#usuarios">Usuarios</a>
-      <a href="#licencias">Licencias</a>
-      <a href="#manuales">Manuales</a>
-      <a href="/">Cerrar sesión</a>
-    </aside>
+<BaseLayout title="Panel ADM | SEAZEP">
+  <Header active="admin" />
 
+  <main>
     <section class="section">
-      <span class="eyebrow">Administrador único</span>
-      <h1>Control operativo de plataforma</h1>
-      <p>Vista base para el futuro panel administrativo de SEAZEP. En producción se conectará a Cloudflare Workers + D1.</p>
+      <SectionTitle
+        eyebrow="ADM SEAZEP"
+        title="Panel administrativo de solicitudes."
+        text="Consulta interna de solicitudes recibidas desde el formulario público de SEAZEP-WEB."
+      />
 
-      <div class="metric-row">
-        <div class="metric"><strong>18</strong><span>Licencias activas</span></div>
-        <div class="metric"><strong>4</strong><span>Por vencer</span></div>
-        <div class="metric"><strong>126</strong><span>Consultas diarias de licencia</span></div>
-        <div class="metric"><strong>32</strong><span>Usuarios registrados</span></div>
+      <div class="admin-access-panel">
+        <div>
+          <h3>Acceso temporal ADM</h3>
+          <p>
+            Ingrese la clave administrativa para consultar las solicitudes registradas.
+            Esta clave no se guarda en GitHub.
+          </p>
+        </div>
+
+        <div class="admin-key-form">
+          <input
+            class="input"
+            id="adminApiKey"
+            type="password"
+            placeholder="Clave ADM temporal"
+            autocomplete="off"
+          />
+
+          <button class="btn btn-primary" id="loadRequestsButton" type="button">
+            Cargar solicitudes
+          </button>
+        </div>
+
+        <p id="adminStatus" class="form-status" aria-live="polite"></p>
       </div>
 
-      <div class="section" id="licencias">
-        <h2>Licencias y activaciones</h2>
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Empresa</th>
-              <th>Software</th>
-              <th>Estado</th>
-              <th>Vencimiento</th>
-              <th>Consultas hoy</th>
-              <th>Última validación</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>SAPAS</td>
-              <td>SmartPozo360</td>
-              <td><span class="status ok">Activa</span></td>
-              <td>19/06/2027</td>
-              <td>18</td>
-              <td>Hoy 09:42</td>
-            </tr>
-            <tr>
-              <td>Organismo ejemplo</td>
-              <td>SmartPozo360</td>
-              <td><span class="status warn">Por vencer</span></td>
-              <td>21/07/2026</td>
-              <td>7</td>
-              <td>Hoy 08:15</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="grid-2">
-        <article class="card" id="empresas">
-          <h3>Empresas</h3>
-          <p>Alta, edición y seguimiento de empresas registradas sin limitar el modelo a número de pozos.</p>
-          <ul>
-            <li>Datos de contacto</li>
-            <li>Software asignado</li>
-            <li>Historial comercial</li>
-          </ul>
+      <div class="admin-summary-grid">
+        <article class="card">
+          <span class="eyebrow">Solicitudes</span>
+          <h3 id="totalRequests">0</h3>
+          <p>Registros recibidos desde el formulario público.</p>
         </article>
 
-        <article class="card" id="manuales">
-          <h3>Manuales y recursos</h3>
-          <p>Subida y control de manuales por software, versión y nivel de permiso.</p>
-          <ul>
-            <li>Descargas por usuario</li>
-            <li>Documento visible / privado</li>
-            <li>Control de versiones</li>
-          </ul>
+        <article class="card">
+          <span class="eyebrow">Estado</span>
+          <h3 id="newRequests">0</h3>
+          <p>Solicitudes nuevas pendientes de seguimiento.</p>
+        </article>
+
+        <article class="card">
+          <span class="eyebrow">Origen</span>
+          <h3>Web</h3>
+          <p>Solicitudes capturadas desde SEAZEP-WEB.</p>
         </article>
       </div>
+
+      <section class="admin-requests-section">
+        <div class="admin-section-header">
+          <div>
+            <span class="eyebrow">Solicitudes recientes</span>
+            <h2>Registros empresariales recibidos.</h2>
+          </div>
+
+          <button class="btn btn-ghost" id="refreshRequestsButton" type="button">
+            Actualizar
+          </button>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Empresa</th>
+                <th>Responsable</th>
+                <th>Contacto</th>
+                <th>Interés</th>
+                <th>Estado</th>
+                <th>Mensaje</th>
+              </tr>
+            </thead>
+            <tbody id="requestsTableBody">
+              <tr>
+                <td colspan="7" class="admin-empty">
+                  Ingrese la clave ADM y presione “Cargar solicitudes”.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </section>
   </main>
+
+  <Footer />
+
+  <script>
+    const ADMIN_REQUESTS_URL = "https://seazep-api.seazepfco.workers.dev/admin/requests?limit=50";
+
+    const keyInput = document.getElementById("adminApiKey");
+    const loadButton = document.getElementById("loadRequestsButton");
+    const refreshButton = document.getElementById("refreshRequestsButton");
+    const statusEl = document.getElementById("adminStatus");
+    const tableBody = document.getElementById("requestsTableBody");
+    const totalRequestsEl = document.getElementById("totalRequests");
+    const newRequestsEl = document.getElementById("newRequests");
+
+    function setStatus(message, type = "") {
+      if (!statusEl) return;
+      statusEl.textContent = message;
+      statusEl.className = type ? `form-status ${type}` : "form-status";
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatDate(value) {
+      if (!value) return "N/D";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) {
+        return value;
+      }
+
+      return date.toLocaleString("es-MX", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function renderRequests(requests) {
+      if (!tableBody) return;
+
+      if (!requests.length) {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="7" class="admin-empty">
+              No hay solicitudes registradas.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tableBody.innerHTML = requests.map((item) => `
+        <tr>
+          <td>${escapeHtml(formatDate(item.created_at))}</td>
+          <td>
+            <strong>${escapeHtml(item.company_name)}</strong>
+            <small>${escapeHtml(item.source || "website")}</small>
+          </td>
+          <td>
+            <strong>${escapeHtml(item.contact_name)}</strong>
+            <small>${escapeHtml(item.contact_position || "Sin cargo")}</small>
+          </td>
+          <td>
+            <strong>${escapeHtml(item.contact_email)}</strong>
+            <small>${escapeHtml(item.contact_phone || "Sin teléfono")}</small>
+          </td>
+          <td>${escapeHtml(item.interest_area)}</td>
+          <td>
+            <span class="admin-status-pill">${escapeHtml(item.status)}</span>
+          </td>
+          <td class="admin-message-cell">${escapeHtml(item.message || "Sin mensaje")}</td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadRequests() {
+      if (!keyInput || !loadButton || !refreshButton) return;
+
+      const adminKey = String(keyInput.value || "").trim();
+
+      if (!adminKey) {
+        setStatus("Ingrese la clave ADM para consultar solicitudes.", "error");
+        return;
+      }
+
+      loadButton.disabled = true;
+      refreshButton.disabled = true;
+      setStatus("Cargando solicitudes...");
+
+      try {
+        const response = await fetch(ADMIN_REQUESTS_URL, {
+          method: "GET",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey
+          }
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudieron cargar las solicitudes.");
+        }
+
+        const requests = Array.isArray(result.requests) ? result.requests : [];
+
+        renderRequests(requests);
+
+        if (totalRequestsEl) totalRequestsEl.textContent = String(requests.length);
+        if (newRequestsEl) {
+          newRequestsEl.textContent = String(
+            requests.filter((item) => item.status === "new").length
+          );
+        }
+
+        setStatus("Solicitudes cargadas correctamente.", "success");
+      } catch (error) {
+        renderRequests([]);
+        setStatus(error.message || "Error al cargar solicitudes.", "error");
+      } finally {
+        loadButton.disabled = false;
+        refreshButton.disabled = false;
+      }
+    }
+
+    loadButton?.addEventListener("click", loadRequests);
+    refreshButton?.addEventListener("click", loadRequests);
+  </script>
 </BaseLayout>
