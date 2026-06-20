@@ -20,7 +20,92 @@ const active = Astro.props.active || "";
   </nav>
 
   <div class="nav-actions">
-    <a class="btn btn-ghost" href="/acceso">Acceso</a>
+    <div class="header-user-box" id="headerUserBox" hidden>
+  <div class="header-user-info">
+    <strong id="headerUserName">Usuario</strong>
+    <small id="headerUserEmail">correo@ejemplo.com</small>
+  </div>
+
+  <button class="header-logout-btn" type="button" id="headerLogoutButton">
+    Cerrar sesión
+  </button>
+</div>
+
+    <a class="btn btn-ghost" href="/acceso" id="headerAccessButton">Acceso</a>
     <a class="btn btn-primary" href="/solicitar-demo">Solicitar información</a>
   </div>
+
+
+
+  <script>
+  const headerUserBox = document.getElementById("headerUserBox");
+  const headerUserName = document.getElementById("headerUserName");
+  const headerUserEmail = document.getElementById("headerUserEmail");
+  const headerLogoutButton = document.getElementById("headerLogoutButton");
+  const headerAccessButton = document.getElementById("headerAccessButton");
+
+  function getStoredSeazepUser() {
+    try {
+      const rawUser = localStorage.getItem("seazep_user");
+      const token = localStorage.getItem("seazep_session_token");
+      const expiresAt = localStorage.getItem("seazep_session_expires_at");
+
+      if (!rawUser || !token || !expiresAt) {
+        return null;
+      }
+
+      const expiresDate = new Date(expiresAt);
+
+      if (Number.isNaN(expiresDate.getTime()) || expiresDate <= new Date()) {
+        localStorage.removeItem("seazep_user");
+        localStorage.removeItem("seazep_session_token");
+        localStorage.removeItem("seazep_session_expires_at");
+        return null;
+      }
+
+      return JSON.parse(rawUser);
+    } catch {
+      return null;
+    }
+  }
+
+  function renderHeaderSession() {
+    const user = getStoredSeazepUser();
+
+    if (!user) {
+      if (headerUserBox) headerUserBox.hidden = true;
+      if (headerAccessButton) headerAccessButton.hidden = false;
+      return;
+    }
+
+    if (headerUserName) {
+      headerUserName.textContent = user.fullName || "Usuario SEAZEP";
+    }
+
+    if (headerUserEmail) {
+      headerUserEmail.textContent = user.email || "";
+    }
+
+    if (headerUserBox) {
+      headerUserBox.hidden = false;
+    }
+
+    if (headerAccessButton) {
+      headerAccessButton.hidden = true;
+    }
+  }
+
+  headerLogoutButton?.addEventListener("click", () => {
+    localStorage.removeItem("seazep_user");
+    localStorage.removeItem("seazep_session_token");
+    localStorage.removeItem("seazep_session_expires_at");
+
+    window.location.href = "/acceso";
+  });
+
+  renderHeaderSession();
+</script>
+
+
+
 </header>
