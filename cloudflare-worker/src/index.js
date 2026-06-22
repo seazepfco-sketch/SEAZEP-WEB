@@ -136,6 +136,12 @@ if (url.pathname === "/user/manuals" && request.method === "GET") {
 }
 
 
+  if (url.pathname === "/user/manuals/open" && request.method === "POST") {
+  return handleUserOpenManual(request, env);
+}
+
+
+
 
 
 
@@ -3679,6 +3685,172 @@ async function handleUserListManuals(request, env) {
   });
 }
 
+
+
+  async function handleUserOpenManual(request, env) {
+  const user = await getAuthenticatedUserFromRequest(request, env);
+
+  if (!user) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Sesión no válida o expirada."
+    }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const manualId = cleanText(body.manualId, 80);
+
+  if (!manualId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_MANUAL_ID",
+      message: "Falta el ID del manual."
+    }, 400);
+  }
+
+  const manual = await env.DB.prepare(`
+    SELECT DISTINCT
+      m.id,
+      m.title,
+      m.description,
+      m.file_url,
+      m.category,
+      m.version,
+      m.status,
+      m.visibility,
+      m.product_id
+    FROM manuals m
+    LEFT JOIN manual_company_access mca
+      ON mca.manual_id = m.id
+      AND mca.status = 'active'
+      AND mca.company_id = ?
+    WHERE m.id = ?
+      AND m.status = 'active'
+      AND (
+        m.visibility = 'public'
+        OR (
+          m.visibility = 'private'
+          AND ? IS NOT NULL
+          AND mca.company_id = ?
+        )
+      )
+    LIMIT 1
+  `)
+    .bind(
+      user.company_id || "",
+      manualId,
+      user.company_id || null,
+      user.company_id || ""
+    )
+    .first();
+
+  if (!manual) {
+    return corsResponse({
+      ok: false,
+      code: "MANUAL_ACCESS_DENIED",
+      message: "Manual no encontrado o no autorizado para su empresa."
+    }, 404);
+  }
+
+  if (!manual.file_url) {
+    return corsResponse({
+      ok: false,
+      code: "MANUAL_FILE_MISSING",
+      message: "El manual no tiene archivo configurado."
+    }, 409);
+  }
+
+  const now = new Date().toISOString();
+  const downloadId = crypto.randomUUID();
+  const ipAddress = request.headers.get("cf-connecting-ip") || "";
+  const userAgent = request.headers.get("user-agent") || "";
+
+  await env.DB.prepare(`
+    INSERT INTO manual_downloads (
+      id,
+      manual_id,
+      user_id,
+      company_id,
+      session_id,
+      file_url,
+      ip_address,
+      user_agent,
+      downloaded_at,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      downloadId,
+      manual.id,
+      user.id,
+      user.company_id || null,
+      user.session_id || null,
+      manual.file_url,
+      ipAddress,
+      userAgent,
+      now,
+      now
+    )
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      user.id,
+      "user_manual_opened",
+      "manuals",
+      manual.id,
+      JSON.stringify({
+        manualId: manual.id,
+        manualTitle: manual.title,
+        companyId: user.company_id || "",
+        companyName: user.linked_company_name || "",
+        downloadId,
+        fileUrl: manual.file_url
+      }),
+      now
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    message: "Acceso al manual autorizado.",
+    downloadId,
+    openUrl: manual.file_url,
+    manual: {
+      id: manual.id,
+      title: manual.title,
+      description: manual.description || "",
+      category: manual.category || "",
+      version: manual.version || "",
+      visibility: manual.visibility || "",
+      productId: manual.product_id || ""
+    },
+    loggedAt: now
+  });
+}
 
 
 
