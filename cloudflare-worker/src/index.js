@@ -115,6 +115,28 @@ if (url.pathname === "/admin/companies/update-status" && request.method === "POS
 
 
 
+  if (url.pathname === "/admin/manuals" && request.method === "GET") {
+  return handleAdminListManuals(request, env);
+}
+
+if (url.pathname === "/admin/manuals" && request.method === "POST") {
+  return handleAdminCreateManual(request, env);
+}
+
+if (url.pathname === "/admin/manuals/update-status" && request.method === "POST") {
+  return handleAdminUpdateManualStatus(request, env);
+}
+
+if (url.pathname === "/admin/manuals/assign-company" && request.method === "POST") {
+  return handleAdminAssignManualCompany(request, env);
+}
+
+if (url.pathname === "/user/manuals" && request.method === "GET") {
+  return handleUserListManuals(request, env);
+}
+
+
+
 
 
     /*
@@ -2915,6 +2937,750 @@ function escapeEmailHtml(value) {
     updatedAt: now
   });
 }
+
+
+  async function handleAdminListManuals(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  const url = new URL(request.url);
+
+  const status = cleanText(url.searchParams.get("status") || "", 40);
+  const visibility = cleanText(url.searchParams.get("visibility") || "", 40);
+  const search = cleanText(url.searchParams.get("search") || "", 120);
+
+  const rawLimit = Number(url.searchParams.get("limit") || 50);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(Math.trunc(rawLimit), 1), 100)
+    : 50;
+
+  const whereParts = [];
+  const params = [];
+
+  if (status && status !== "all") {
+    whereParts.push("m.status = ?");
+    params.push(status);
+  }
+
+  if (visibility && visibility !== "all") {
+    whereParts.push("m.visibility = ?");
+    params.push(visibility);
+  }
+
+  if (search) {
+    const likeSearch = `%${search}%`;
+
+    whereParts.push(`(
+      m.title LIKE ?
+      OR m.description LIKE ?
+      OR m.category LIKE ?
+      OR m.version LIKE ?
+      OR m.file_url LIKE ?
+      OR m.status LIKE ?
+      OR m.visibility LIKE ?
+    )`);
+
+    params.push(
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch
+    );
+  }
+
+  const whereSql = whereParts.length
+    ? `WHERE ${whereParts.join(" AND ")}`
+    : "";
+
+  const listSql = `
+    SELECT
+      m.id,
+      m.title,
+      m.description,
+      m.file_url,
+      m.category,
+      m.version,
+      m.status,
+      m.visibility,
+      m.product_id,
+      m.created_at,
+      m.updated_at,
+      COUNT(mca.company_id) AS assigned_companies_count
+    FROM manuals m
+    LEFT JOIN manual_company_access mca
+      ON mca.manual_id = m.id
+      AND mca.status = 'active'
+    ${whereSql}
+    GROUP BY
+      m.id,
+      m.title,
+      m.description,
+      m.file_url,
+      m.category,
+      m.version,
+      m.status,
+      m.visibility,
+      m.product_id,
+      m.created_at,
+      m.updated_at
+    ORDER BY COALESCE(m.updated_at, m.created_at) DESC
+    LIMIT ${limit}
+  `;
+
+  const countSql = `
+    SELECT COUNT(*) AS total
+    FROM manuals m
+    ${whereSql}
+  `;
+
+  const listStatement = env.DB.prepare(listSql);
+  const countStatement = env.DB.prepare(countSql);
+
+  const listResult = params.length
+    ? await listStatement.bind(...params).all()
+    : await listStatement.all();
+
+  const countResult = params.length
+    ? await countStatement.bind(...params).first()
+    : await countStatement.first();
+
+  const summaryResult = await env.DB.prepare(`
+    SELECT
+      COALESCE(status, 'active') AS status,
+      COUNT(*) AS total
+    FROM manuals
+    GROUP BY COALESCE(status, 'active')
+  `).all();
+
+  const visibilityResult = await env.DB.prepare(`
+    SELECT
+      COALESCE(visibility, 'private') AS visibility,
+      COUNT(*) AS total
+    FROM manuals
+    GROUP BY COALESCE(visibility, 'private')
+  `).all();
+
+  const totalAllResult = await env.DB.prepare(`
+    SELECT COUNT(*) AS total
+    FROM manuals
+  `).first();
+
+  const summary = {
+    total: Number(totalAllResult?.total || 0),
+    active: 0,
+    inactive: 0,
+    archived: 0,
+    public: 0,
+    private: 0
+  };
+
+  for (const row of summaryResult.results || []) {
+    const key = row.status || "active";
+    summary[key] = Number(row.total || 0);
+  }
+
+  for (const row of visibilityResult.results || []) {
+    const key = row.visibility || "private";
+    summary[key] = Number(row.total || 0);
+  }
+
+  return corsResponse({
+    ok: true,
+    count: (listResult.results || []).length,
+    total: Number(countResult?.total || 0),
+    limit,
+    filters: {
+      status: status || "all",
+      visibility: visibility || "all",
+      search
+    },
+    summary,
+    manuals: listResult.results || []
+  });
+}
+
+async function handleAdminCreateManual(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const title = cleanText(body.title, 180);
+  const description = cleanText(body.description || "", 1200);
+  const fileUrl = cleanText(body.fileUrl || "", 500);
+  const category = cleanText(body.category || "", 120);
+  const version = cleanText(body.version || "", 80);
+  const status = cleanText(body.status || "active", 40);
+  const visibility = cleanText(body.visibility || "private", 40);
+  const productId = cleanText(body.productId || "", 80);
+
+  const allowedStatuses = [
+    "active",
+    "inactive",
+    "archived"
+  ];
+
+  const allowedVisibility = [
+    "private",
+    "public"
+  ];
+
+  if (!title) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_TITLE",
+      message: "El título del manual es obligatorio."
+    }, 400);
+  }
+
+  if (!fileUrl) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_FILE_URL",
+      message: "La URL o ruta del archivo es obligatoria."
+    }, 400);
+  }
+
+  if (!allowedStatuses.includes(status)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_STATUS",
+      message: "Estado de manual no permitido."
+    }, 400);
+  }
+
+  if (!allowedVisibility.includes(visibility)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_VISIBILITY",
+      message: "Visibilidad de manual no permitida."
+    }, 400);
+  }
+
+  const now = new Date().toISOString();
+  const manualId = crypto.randomUUID();
+
+  await env.DB.prepare(`
+    INSERT INTO manuals (
+      id,
+      title,
+      description,
+      file_url,
+      category,
+      version,
+      status,
+      visibility,
+      product_id,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      manualId,
+      title,
+      description || null,
+      fileUrl,
+      category || null,
+      version || null,
+      status,
+      visibility,
+      productId || null,
+      now,
+      now
+    )
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      "temporary-admin",
+      "admin_manual_created",
+      "manuals",
+      manualId,
+      JSON.stringify({
+        title,
+        fileUrl,
+        category,
+        version,
+        status,
+        visibility,
+        productId
+      }),
+      now
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    id: manualId,
+    message: "Manual creado correctamente.",
+    manual: {
+      id: manualId,
+      title,
+      description,
+      fileUrl,
+      category,
+      version,
+      status,
+      visibility,
+      productId,
+      createdAt: now,
+      updatedAt: now
+    }
+  });
+}
+
+async function handleAdminUpdateManualStatus(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const manualId = cleanText(body.manualId, 80);
+  const status = cleanText(body.status, 40);
+  const note = cleanText(body.note || "", 800);
+
+  const allowedStatuses = [
+    "active",
+    "inactive",
+    "archived"
+  ];
+
+  if (!manualId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_MANUAL_ID",
+      message: "Falta el ID del manual."
+    }, 400);
+  }
+
+  if (!allowedStatuses.includes(status)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_STATUS",
+      message: "Estado de manual no permitido."
+    }, 400);
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT
+      id,
+      title,
+      status,
+      visibility
+    FROM manuals
+    WHERE id = ?
+    LIMIT 1
+  `)
+    .bind(manualId)
+    .first();
+
+  if (!existing) {
+    return corsResponse({
+      ok: false,
+      code: "MANUAL_NOT_FOUND",
+      message: "No se encontró el manual."
+    }, 404);
+  }
+
+  const previousStatus = existing.status || "active";
+  const now = new Date().toISOString();
+
+  await env.DB.prepare(`
+    UPDATE manuals
+    SET
+      status = ?,
+      updated_at = ?
+    WHERE id = ?
+  `)
+    .bind(status, now, manualId)
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      "temporary-admin",
+      "admin_manual_status_updated",
+      "manuals",
+      manualId,
+      JSON.stringify({
+        title: existing.title,
+        visibility: existing.visibility || "",
+        previousStatus,
+        newStatus: status,
+        note
+      }),
+      now
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    id: manualId,
+    previousStatus,
+    status,
+    message: "Estado de manual actualizado correctamente.",
+    updatedAt: now
+  });
+}
+
+async function handleAdminAssignManualCompany(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const manualId = cleanText(body.manualId, 80);
+  const companyId = cleanText(body.companyId, 80);
+  const status = cleanText(body.status || "active", 40);
+  const note = cleanText(body.note || "", 800);
+
+  const allowedStatuses = [
+    "active",
+    "revoked"
+  ];
+
+  if (!manualId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_MANUAL_ID",
+      message: "Falta el ID del manual."
+    }, 400);
+  }
+
+  if (!companyId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_COMPANY_ID",
+      message: "Falta el ID de la empresa."
+    }, 400);
+  }
+
+  if (!allowedStatuses.includes(status)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_STATUS",
+      message: "Estado de asignación no permitido."
+    }, 400);
+  }
+
+  const manual = await env.DB.prepare(`
+    SELECT
+      id,
+      title,
+      status,
+      visibility
+    FROM manuals
+    WHERE id = ?
+    LIMIT 1
+  `)
+    .bind(manualId)
+    .first();
+
+  if (!manual) {
+    return corsResponse({
+      ok: false,
+      code: "MANUAL_NOT_FOUND",
+      message: "No se encontró el manual."
+    }, 404);
+  }
+
+  const company = await env.DB.prepare(`
+    SELECT
+      id,
+      name,
+      status
+    FROM companies
+    WHERE id = ?
+    LIMIT 1
+  `)
+    .bind(companyId)
+    .first();
+
+  if (!company) {
+    return corsResponse({
+      ok: false,
+      code: "COMPANY_NOT_FOUND",
+      message: "No se encontró la empresa."
+    }, 404);
+  }
+
+  const now = new Date().toISOString();
+  const accessId = crypto.randomUUID();
+
+  await env.DB.prepare(`
+    INSERT INTO manual_company_access (
+      id,
+      manual_id,
+      company_id,
+      status,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(manual_id, company_id)
+    DO UPDATE SET
+      status = excluded.status,
+      updated_at = excluded.updated_at
+  `)
+    .bind(
+      accessId,
+      manualId,
+      companyId,
+      status,
+      now,
+      now
+    )
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      "temporary-admin",
+      "admin_manual_company_access_updated",
+      "manual_company_access",
+      manualId,
+      JSON.stringify({
+        manualId,
+        manualTitle: manual.title,
+        companyId,
+        companyName: company.name,
+        status,
+        note
+      }),
+      now
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    message: status === "active"
+      ? "Manual asignado a empresa correctamente."
+      : "Acceso al manual revocado para la empresa.",
+    manualId,
+    companyId,
+    status,
+    updatedAt: now
+  });
+}
+
+function getBearerToken(request) {
+  const authorization = request.headers.get("authorization") || "";
+
+  if (!authorization.toLowerCase().startsWith("bearer ")) {
+    return "";
+  }
+
+  return authorization.slice(7).trim();
+}
+
+async function getAuthenticatedUserFromRequest(request, env) {
+  const token = getBearerToken(request);
+
+  if (!token) {
+    return null;
+  }
+
+  const tokenHash = await sha256Hex(token);
+  const nowIso = new Date().toISOString();
+
+  const session = await env.DB.prepare(`
+    SELECT
+      s.id AS session_id,
+      s.user_id,
+      s.status AS session_status,
+      s.expires_at,
+      u.id,
+      u.full_name,
+      u.email,
+      u.company_name,
+      u.company_id,
+      u.phone,
+      u.role,
+      u.status,
+      c.name AS linked_company_name,
+      c.status AS linked_company_status
+    FROM user_sessions s
+    INNER JOIN users u ON u.id = s.user_id
+    LEFT JOIN companies c ON c.id = u.company_id
+    WHERE s.token_hash = ?
+      AND s.status = 'active'
+      AND s.expires_at > ?
+      AND u.status = 'active'
+    LIMIT 1
+  `)
+    .bind(tokenHash, nowIso)
+    .first();
+
+  if (!session) {
+    return null;
+  }
+
+  await env.DB.prepare(`
+    UPDATE user_sessions
+    SET last_seen_at = ?
+    WHERE id = ?
+  `)
+    .bind(nowIso, session.session_id)
+    .run();
+
+  return session;
+}
+
+async function handleUserListManuals(request, env) {
+  const user = await getAuthenticatedUserFromRequest(request, env);
+
+  if (!user) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Sesión no válida o expirada."
+    }, 401);
+  }
+
+  const manualsResult = await env.DB.prepare(`
+    SELECT DISTINCT
+      m.id,
+      m.title,
+      m.description,
+      m.file_url,
+      m.category,
+      m.version,
+      m.status,
+      m.visibility,
+      m.product_id,
+      m.created_at,
+      m.updated_at
+    FROM manuals m
+    LEFT JOIN manual_company_access mca
+      ON mca.manual_id = m.id
+      AND mca.status = 'active'
+      AND mca.company_id = ?
+    WHERE m.status = 'active'
+      AND (
+        m.visibility = 'public'
+        OR (
+          m.visibility = 'private'
+          AND ? IS NOT NULL
+          AND mca.company_id = ?
+        )
+      )
+    ORDER BY COALESCE(m.updated_at, m.created_at) DESC
+  `)
+    .bind(
+      user.company_id || "",
+      user.company_id || null,
+      user.company_id || ""
+    )
+    .all();
+
+  return corsResponse({
+    ok: true,
+    user: {
+      id: user.id,
+      fullName: user.full_name,
+      email: user.email,
+      companyId: user.company_id || "",
+      linkedCompanyName: user.linked_company_name || "",
+      linkedCompanyStatus: user.linked_company_status || ""
+    },
+    count: (manualsResult.results || []).length,
+    manuals: manualsResult.results || []
+  });
+}
+
+
+
 
 
 function validateAdminRequest(request, env) {

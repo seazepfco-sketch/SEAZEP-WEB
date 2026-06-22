@@ -1,0 +1,834 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import Header from "../../components/Header.astro";
+import Footer from "../../components/Footer.astro";
+import SectionTitle from "../../components/SectionTitle.astro";
+---
+
+<BaseLayout title="Manuales ADM | SEAZEP">
+  <Header active="admin" />
+
+  <main>
+    <section class="section">
+      <SectionTitle
+        eyebrow="ADM SEAZEP"
+        title="Gestión de manuales privados."
+        text="Administra manuales, guías técnicas y recursos privados autorizados para empresas asociadas a SEAZEP."
+      />
+
+      <div class="admin-access-panel">
+        <div>
+          <h3>Acceso temporal ADM</h3>
+          <p>
+            Ingrese la clave administrativa para crear, consultar y asignar manuales.
+            Esta clave corresponde al secreto ADMIN_API_KEY del Worker.
+          </p>
+        </div>
+
+        <div class="admin-key-form">
+          <input
+            class="input"
+            id="adminApiKey"
+            type="password"
+            placeholder="Clave ADM temporal"
+            autocomplete="off"
+          />
+
+          <button class="btn btn-primary" id="loadManualsButton" type="button">
+            Cargar manuales
+          </button>
+
+          <a class="btn btn-ghost" href="/admin/dashboard">
+            Solicitudes
+          </a>
+
+          <a class="btn btn-ghost" href="/admin/usuarios">
+            Usuarios
+          </a>
+
+          <a class="btn btn-ghost" href="/admin/empresas">
+            Empresas
+          </a>
+        </div>
+
+        <p id="adminManualsStatus" class="form-status" aria-live="polite"></p>
+      </div>
+
+      <section class="admin-filter-panel manual-create-panel">
+        <div class="admin-filter-header">
+          <div>
+            <span class="eyebrow">Nuevo manual</span>
+            <h3>Registrar manual o recurso privado.</h3>
+          </div>
+        </div>
+
+        <form class="manual-form-grid" id="createManualForm" autocomplete="off">
+          <input
+            class="input"
+            name="title"
+            placeholder="Título del manual *"
+            required
+          />
+
+          <input
+            class="input"
+            name="category"
+            placeholder="Categoría, ejemplo: SmartPozo360"
+          />
+
+          <input
+            class="input"
+            name="version"
+            placeholder="Versión, ejemplo: 1.0"
+          />
+
+          <input
+            class="input"
+            name="productId"
+            placeholder="Producto, ejemplo: smartpozo360"
+          />
+
+          <input
+            class="input manual-url-field"
+            name="fileUrl"
+            placeholder="URL o ruta del archivo, ejemplo: /assets/manuales/manual-smartpozo360.pdf *"
+            required
+          />
+
+          <select class="input" name="status">
+            <option value="active">Activo</option>
+            <option value="inactive">Inactivo</option>
+            <option value="archived">Archivado</option>
+          </select>
+
+          <select class="input" name="visibility">
+            <option value="private">Privado por empresa</option>
+            <option value="public">Público para usuarios activos</option>
+          </select>
+
+          <textarea
+            class="input manual-description-field"
+            name="description"
+            placeholder="Descripción interna o explicación breve del manual"
+            rows="4"
+          ></textarea>
+
+          <button class="btn btn-primary" type="submit" id="createManualButton">
+            Crear manual
+          </button>
+        </form>
+      </section>
+
+      <section class="admin-filter-panel">
+        <div class="admin-filter-header">
+          <div>
+            <span class="eyebrow">Filtros ADM</span>
+            <h3>Seguimiento de manuales</h3>
+          </div>
+
+          <button class="btn btn-secondary" type="button" id="clearManualFiltersButton">
+            Limpiar filtros
+          </button>
+        </div>
+
+        <div class="admin-filter-grid">
+          <label class="admin-filter-field">
+            <span>Estado</span>
+            <select class="input" id="manualStatusFilter">
+              <option value="all">Todos los estados</option>
+              <option value="active">Activos</option>
+              <option value="inactive">Inactivos</option>
+              <option value="archived">Archivados</option>
+            </select>
+          </label>
+
+          <label class="admin-filter-field">
+            <span>Visibilidad</span>
+            <select class="input" id="manualVisibilityFilter">
+              <option value="all">Todas</option>
+              <option value="private">Privados</option>
+              <option value="public">Públicos</option>
+            </select>
+          </label>
+
+          <label class="admin-filter-field admin-filter-search">
+            <span>Buscar</span>
+            <input
+              class="input"
+              id="manualSearchInput"
+              placeholder="Título, categoría, versión, URL, estado o visibilidad"
+            />
+          </label>
+        </div>
+
+        <div class="admin-summary-grid manuals-summary-grid">
+          <article class="admin-summary-card">
+            <span>Total</span>
+            <strong id="summaryManualsTotal">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Activos</span>
+            <strong id="summaryManualsActive">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Inactivos</span>
+            <strong id="summaryManualsInactive">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Archivados</span>
+            <strong id="summaryManualsArchived">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Públicos</span>
+            <strong id="summaryManualsPublic">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Privados</span>
+            <strong id="summaryManualsPrivate">0</strong>
+          </article>
+        </div>
+      </section>
+
+      <section class="admin-requests-section">
+        <div class="admin-section-header">
+          <div>
+            <span class="eyebrow">Manuales registrados</span>
+            <h2>Recursos técnicos disponibles.</h2>
+          </div>
+
+          <button class="btn btn-ghost" id="refreshManualsButton" type="button">
+            Actualizar
+          </button>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Registro</th>
+                <th>Manual</th>
+                <th>Archivo</th>
+                <th>Categoría</th>
+                <th>Estado</th>
+                <th>Visibilidad</th>
+                <th>Empresas</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+
+            <tbody id="manualsTableBody">
+              <tr>
+                <td colspan="8" class="admin-empty">
+                  Ingrese la clave ADM y presione “Cargar manuales”.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <Footer />
+
+  <script>
+    const ADMIN_MANUALS_BASE_URL = "https://seazep-api.seazepfco.workers.dev/admin/manuals";
+    const ADMIN_UPDATE_MANUAL_STATUS_URL = "https://seazep-api.seazepfco.workers.dev/admin/manuals/update-status";
+    const ADMIN_ASSIGN_MANUAL_COMPANY_URL = "https://seazep-api.seazepfco.workers.dev/admin/manuals/assign-company";
+    const ADMIN_COMPANIES_BASE_URL = "https://seazep-api.seazepfco.workers.dev/admin/companies";
+
+    const adminKeyInput = document.getElementById("adminApiKey");
+    const loadManualsButton = document.getElementById("loadManualsButton");
+    const refreshManualsButton = document.getElementById("refreshManualsButton");
+    const statusEl = document.getElementById("adminManualsStatus");
+    const manualsTableBody = document.getElementById("manualsTableBody");
+
+    const createManualForm = document.getElementById("createManualForm");
+    const createManualButton = document.getElementById("createManualButton");
+
+    const manualStatusFilter = document.getElementById("manualStatusFilter");
+    const manualVisibilityFilter = document.getElementById("manualVisibilityFilter");
+    const manualSearchInput = document.getElementById("manualSearchInput");
+    const clearManualFiltersButton = document.getElementById("clearManualFiltersButton");
+
+    const summaryManualsTotal = document.getElementById("summaryManualsTotal");
+    const summaryManualsActive = document.getElementById("summaryManualsActive");
+    const summaryManualsInactive = document.getElementById("summaryManualsInactive");
+    const summaryManualsArchived = document.getElementById("summaryManualsArchived");
+    const summaryManualsPublic = document.getElementById("summaryManualsPublic");
+    const summaryManualsPrivate = document.getElementById("summaryManualsPrivate");
+
+    let availableCompanies = [];
+
+    function getAdminKey() {
+      return String(adminKeyInput?.value || "").trim();
+    }
+
+    function setStatus(message, type = "") {
+      if (!statusEl) return;
+      statusEl.textContent = message;
+      statusEl.className = type ? `form-status ${type}` : "form-status";
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatDate(value) {
+      if (!value) return "N/D";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) {
+        return value;
+      }
+
+      return date.toLocaleString("es-MX", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function getManualStatusLabel(status) {
+      const labels = {
+        active: "Activo",
+        inactive: "Inactivo",
+        archived: "Archivado"
+      };
+
+      return labels[status] || status || "Activo";
+    }
+
+    function getManualVisibilityLabel(visibility) {
+      const labels = {
+        private: "Privado",
+        public: "Público"
+      };
+
+      return labels[visibility] || visibility || "Privado";
+    }
+
+    function getCompanyStatusLabel(status) {
+      const labels = {
+        lead: "Prospecto",
+        active: "Activa",
+        suspended: "Suspendida",
+        archived: "Archivada"
+      };
+
+      return labels[status] || status || "Sin estado";
+    }
+
+    function getSafeStatusClass(value) {
+      return `status-${String(value || "").replace(/[^a-z0-9_-]/gi, "")}`;
+    }
+
+    function buildManualsUrl() {
+      const params = new URLSearchParams();
+
+      params.set("limit", "50");
+
+      const status = String(manualStatusFilter?.value || "all").trim();
+      const visibility = String(manualVisibilityFilter?.value || "all").trim();
+      const search = String(manualSearchInput?.value || "").trim();
+
+      if (status && status !== "all") {
+        params.set("status", status);
+      }
+
+      if (visibility && visibility !== "all") {
+        params.set("visibility", visibility);
+      }
+
+      if (search) {
+        params.set("search", search);
+      }
+
+      return `${ADMIN_MANUALS_BASE_URL}?${params.toString()}`;
+    }
+
+    function updateManualSummary(summary = {}) {
+      if (summaryManualsTotal) summaryManualsTotal.textContent = String(summary.total || 0);
+      if (summaryManualsActive) summaryManualsActive.textContent = String(summary.active || 0);
+      if (summaryManualsInactive) summaryManualsInactive.textContent = String(summary.inactive || 0);
+      if (summaryManualsArchived) summaryManualsArchived.textContent = String(summary.archived || 0);
+      if (summaryManualsPublic) summaryManualsPublic.textContent = String(summary.public || 0);
+      if (summaryManualsPrivate) summaryManualsPrivate.textContent = String(summary.private || 0);
+    }
+
+    async function loadCompanyOptions(adminKey) {
+      const response = await fetch(`${ADMIN_COMPANIES_BASE_URL}?limit=100`, {
+        method: "GET",
+        mode: "cors",
+        headers: {
+          "x-admin-key": adminKey
+        }
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message || "No se pudieron cargar las empresas.");
+      }
+
+      availableCompanies = result.companies || [];
+    }
+
+    function buildCompanySelectOptions() {
+      const baseOption = `
+        <option value="">
+          Seleccionar empresa
+        </option>
+      `;
+
+      const companyOptions = availableCompanies.map((company) => {
+        const companyId = String(company.id || "");
+        const label = `${company.name || "Empresa sin nombre"} — ${getCompanyStatusLabel(company.status)}`;
+
+        return `
+          <option value="${escapeHtml(companyId)}">
+            ${escapeHtml(label)}
+          </option>
+        `;
+      }).join("");
+
+      return `${baseOption}${companyOptions}`;
+    }
+
+    function buildManualActionButtons(manual) {
+      const currentStatus = manual.status || "active";
+
+      const actions = [
+        { status: "active", label: "Activar", className: "ok" },
+        { status: "inactive", label: "Inactivar", className: "warn" },
+        { status: "archived", label: "Archivar", className: "danger" }
+      ];
+
+      return `
+        <div class="admin-action-buttons">
+          ${actions.map((action) => `
+            <button
+              class="admin-mini-btn ${action.className}"
+              type="button"
+              data-manual-id="${escapeHtml(manual.id)}"
+              data-next-status="${escapeHtml(action.status)}"
+              ${currentStatus === action.status ? "disabled" : ""}
+            >
+              ${escapeHtml(action.label)}
+            </button>
+          `).join("")}
+
+          <div class="admin-manual-company-actions">
+            <select
+              class="input admin-company-select"
+              data-company-select="${escapeHtml(manual.id)}"
+            >
+              ${buildCompanySelectOptions()}
+            </select>
+
+            <button
+              class="admin-mini-btn convert"
+              type="button"
+              data-manual-id="${escapeHtml(manual.id)}"
+              data-manual-action="assign-company"
+            >
+              Asignar a empresa
+            </button>
+
+            <button
+              class="admin-mini-btn danger"
+              type="button"
+              data-manual-id="${escapeHtml(manual.id)}"
+              data-manual-action="revoke-company"
+            >
+              Revocar a empresa
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderManuals(manuals) {
+      if (!manualsTableBody) return;
+
+      if (!manuals.length) {
+        manualsTableBody.innerHTML = `
+          <tr>
+            <td colspan="8" class="admin-empty">
+              No hay manuales registrados con esos filtros.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      manualsTableBody.innerHTML = manuals.map((manual) => `
+        <tr>
+          <td>${escapeHtml(formatDate(manual.created_at))}</td>
+
+          <td>
+            <strong>${escapeHtml(manual.title || "Sin título")}</strong>
+            <small>${escapeHtml(manual.description || "Sin descripción")}</small>
+            <small>ID: ${escapeHtml(String(manual.id || "").slice(0, 8))}...</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(manual.file_url || "Sin URL")}</strong>
+            <small>Producto: ${escapeHtml(manual.product_id || "N/D")}</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(manual.category || "Sin categoría")}</strong>
+            <small>Versión: ${escapeHtml(manual.version || "N/D")}</small>
+          </td>
+
+          <td>
+            <span class="admin-status-pill ${getSafeStatusClass(manual.status)}">
+              ${escapeHtml(getManualStatusLabel(manual.status))}
+            </span>
+          </td>
+
+          <td>
+            <span class="admin-status-pill ${getSafeStatusClass(manual.visibility)}">
+              ${escapeHtml(getManualVisibilityLabel(manual.visibility))}
+            </span>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(manual.assigned_companies_count || 0)}</strong>
+            <small>empresa(s)</small>
+          </td>
+
+          <td>${buildManualActionButtons(manual)}</td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadManuals() {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus("Ingrese la clave ADM para cargar manuales.", "error");
+        return;
+      }
+
+      setStatus("Cargando empresas y manuales...");
+
+      if (loadManualsButton) loadManualsButton.disabled = true;
+      if (refreshManualsButton) refreshManualsButton.disabled = true;
+
+      try {
+        await loadCompanyOptions(adminKey);
+
+        const response = await fetch(buildManualsUrl(), {
+          method: "GET",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey
+          }
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudieron cargar los manuales.");
+        }
+
+        renderManuals(result.manuals || []);
+        updateManualSummary(result.summary || {});
+
+        setStatus(
+          `Manuales cargados: ${result.count || 0} de ${result.total || 0}`,
+          "success"
+        );
+      } catch (error) {
+        renderManuals([]);
+        updateManualSummary({});
+        setStatus(error.message || "Error al cargar manuales.", "error");
+      } finally {
+        if (loadManualsButton) loadManualsButton.disabled = false;
+        if (refreshManualsButton) refreshManualsButton.disabled = false;
+      }
+    }
+
+    async function createManual(event) {
+      event.preventDefault();
+
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus("Ingrese la clave ADM antes de crear un manual.", "error");
+        return;
+      }
+
+      if (!createManualForm || !createManualButton) return;
+
+      const formData = new FormData(createManualForm);
+
+      const payload = {
+        title: String(formData.get("title") || "").trim(),
+        description: String(formData.get("description") || "").trim(),
+        fileUrl: String(formData.get("fileUrl") || "").trim(),
+        category: String(formData.get("category") || "").trim(),
+        version: String(formData.get("version") || "").trim(),
+        status: String(formData.get("status") || "active").trim(),
+        visibility: String(formData.get("visibility") || "private").trim(),
+        productId: String(formData.get("productId") || "").trim()
+      };
+
+      if (!payload.title) {
+        setStatus("El título del manual es obligatorio.", "error");
+        return;
+      }
+
+      if (!payload.fileUrl) {
+        setStatus("La URL o ruta del archivo es obligatoria.", "error");
+        return;
+      }
+
+      setStatus("Creando manual...");
+      createManualButton.disabled = true;
+
+      try {
+        const response = await fetch(ADMIN_MANUALS_BASE_URL, {
+          method: "POST",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey,
+            "content-type": "text/plain;charset=UTF-8"
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudo crear el manual.");
+        }
+
+        setStatus("Manual creado correctamente.", "success");
+        createManualForm.reset();
+
+        await loadManuals();
+      } catch (error) {
+        setStatus(error.message || "Error al crear manual.", "error");
+      } finally {
+        createManualButton.disabled = false;
+      }
+    }
+
+    async function updateManualStatus(manualId, status) {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus("Ingrese la clave ADM antes de actualizar manuales.", "error");
+        return;
+      }
+
+      if (!manualId || !status) {
+        setStatus("Manual o estado no válido.", "error");
+        return;
+      }
+
+      const note = window.prompt(
+        `Nota opcional para cambiar manual a: ${getManualStatusLabel(status)}`,
+        ""
+      );
+
+      if (note === null) {
+        return;
+      }
+
+      setStatus("Actualizando estado de manual...");
+
+      try {
+        const response = await fetch(ADMIN_UPDATE_MANUAL_STATUS_URL, {
+          method: "POST",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey,
+            "content-type": "text/plain;charset=UTF-8"
+          },
+          body: JSON.stringify({
+            manualId,
+            status,
+            note
+          })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudo actualizar el manual.");
+        }
+
+        setStatus("Estado de manual actualizado correctamente.", "success");
+        await loadManuals();
+      } catch (error) {
+        setStatus(error.message || "Error al actualizar manual.", "error");
+      }
+    }
+
+    
+        async function assignManualCompany(manualId, button, accessStatus) {
+  const adminKey = getAdminKey();
+
+  if (!adminKey) {
+    setStatus("Ingrese la clave ADM antes de asignar manuales.", "error");
+    return;
+  }
+
+  if (!manualId) {
+    setStatus("Manual no válido.", "error");
+    return;
+  }
+
+  const companySelect = Array.from(document.querySelectorAll(".admin-company-select"))
+    .find((select) => String(select.dataset.companySelect || "") === String(manualId));
+
+  if (!companySelect) {
+    setStatus("No se encontró el selector de empresa para este manual.", "error");
+    return;
+  }
+
+  const companyId = String(companySelect.value || "").trim();
+
+  if (!companyId) {
+    setStatus("Seleccione una empresa antes de asignar o revocar el manual.", "error");
+    return;
+  }
+
+  const actionText = accessStatus === "active"
+    ? "asignar este manual a la empresa seleccionada"
+    : "revocar este manual para la empresa seleccionada";
+
+  const note = window.prompt(
+    `Nota opcional para ${actionText}:`,
+    accessStatus === "active"
+      ? "Manual asignado a empresa desde panel ADM."
+      : "Acceso al manual revocado desde panel ADM."
+  );
+
+  if (note === null) {
+    return;
+  }
+
+  setStatus(accessStatus === "active"
+    ? "Asignando manual a empresa..."
+    : "Revocando acceso de manual..."
+  );
+
+  if (button) {
+    button.disabled = true;
+  }
+
+  try {
+    const response = await fetch(ADMIN_ASSIGN_MANUAL_COMPANY_URL, {
+      method: "POST",
+      mode: "cors",
+      headers: {
+        "x-admin-key": adminKey,
+        "content-type": "text/plain;charset=UTF-8"
+      },
+      body: JSON.stringify({
+        manualId,
+        companyId,
+        status: accessStatus,
+        note
+      })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.ok) {
+      throw new Error(result.message || "No se pudo actualizar el acceso al manual.");
+    }
+
+    setStatus(result.message || "Acceso de manual actualizado correctamente.", "success");
+    await loadManuals();
+  } catch (error) {
+    setStatus(error.message || "Error al asignar manual a empresa.", "error");
+  } finally {
+    if (button) {
+      button.disabled = false;
+    }
+  }
+}
+
+
+    
+    manualsTableBody?.addEventListener("click", async (event) => {
+  const target = event.target;
+
+  if (!(target instanceof Element)) {
+    return;
+  }
+
+  const button = target.closest("button[data-manual-id]");
+
+  if (!button) {
+    return;
+  }
+
+  const manualId = button.dataset.manualId || "";
+  const nextStatus = button.dataset.nextStatus || "";
+  const manualAction = button.dataset.manualAction || "";
+
+  if (manualAction === "assign-company") {
+    await assignManualCompany(manualId, button, "active");
+    return;
+  }
+
+  if (manualAction === "revoke-company") {
+    await assignManualCompany(manualId, button, "revoked");
+    return;
+  }
+
+  if (nextStatus) {
+    button.disabled = true;
+
+    try {
+      await updateManualStatus(manualId, nextStatus);
+    } finally {
+      button.disabled = false;
+    }
+  }
+});
+
+
+    createManualForm?.addEventListener("submit", createManual);
+
+    manualStatusFilter?.addEventListener("change", loadManuals);
+    manualVisibilityFilter?.addEventListener("change", loadManuals);
+
+    manualSearchInput?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        loadManuals();
+      }
+    });
+
+    clearManualFiltersButton?.addEventListener("click", () => {
+      if (manualStatusFilter) manualStatusFilter.value = "all";
+      if (manualVisibilityFilter) manualVisibilityFilter.value = "all";
+      if (manualSearchInput) manualSearchInput.value = "";
+      loadManuals();
+    });
+
+    loadManualsButton?.addEventListener("click", loadManuals);
+    refreshManualsButton?.addEventListener("click", loadManuals);
+  </script>
+</BaseLayout>
+
