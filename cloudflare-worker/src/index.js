@@ -131,6 +131,11 @@ if (url.pathname === "/admin/manuals/assign-company" && request.method === "POST
   return handleAdminAssignManualCompany(request, env);
 }
 
+
+  if (url.pathname === "/admin/manual-downloads" && request.method === "GET") {
+  return handleAdminListManualDownloads(request, env);
+}
+
   if (url.pathname === "/admin/manual-downloads" && request.method === "GET") {
   return handleAdminListManualDownloads(request, env);
 }
@@ -3857,6 +3862,8 @@ async function handleUserListManuals(request, env) {
 }
 
 
+
+
   async function handleAdminListManualDownloads(request, env) {
   const auth = validateAdminRequest(request, env);
 
@@ -3871,8 +3878,6 @@ async function handleUserListManuals(request, env) {
   const url = new URL(request.url);
 
   const search = cleanText(url.searchParams.get("search") || "", 120);
-  const companyId = cleanText(url.searchParams.get("companyId") || "", 80);
-  const manualId = cleanText(url.searchParams.get("manualId") || "", 80);
 
   const rawLimit = Number(url.searchParams.get("limit") || 50);
   const limit = Number.isFinite(rawLimit)
@@ -3882,21 +3887,12 @@ async function handleUserListManuals(request, env) {
   const whereParts = [];
   const params = [];
 
-  if (companyId && companyId !== "all") {
-    whereParts.push("md.company_id = ?");
-    params.push(companyId);
-  }
-
-  if (manualId && manualId !== "all") {
-    whereParts.push("md.manual_id = ?");
-    params.push(manualId);
-  }
-
   if (search) {
     const likeSearch = `%${search}%`;
 
     whereParts.push(`(
       m.title LIKE ?
+      OR m.category LIKE ?
       OR u.email LIKE ?
       OR u.full_name LIKE ?
       OR c.name LIKE ?
@@ -3906,6 +3902,7 @@ async function handleUserListManuals(request, env) {
     )`);
 
     params.push(
+      likeSearch,
       likeSearch,
       likeSearch,
       likeSearch,
@@ -3983,9 +3980,7 @@ async function handleUserListManuals(request, env) {
     total: Number(countResult?.total || 0),
     limit,
     filters: {
-      search,
-      companyId: companyId || "all",
-      manualId: manualId || "all"
+      search
     },
     summary: {
       totalDownloads: Number(summaryResult?.total_downloads || 0),
