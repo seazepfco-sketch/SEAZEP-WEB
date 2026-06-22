@@ -13,7 +13,7 @@ import SectionTitle from "../../components/SectionTitle.astro";
       <SectionTitle
         eyebrow="ADM SEAZEP"
         title="Gestión de usuarios registrados."
-        text="Administra solicitudes de registro, aprueba usuarios, suspende accesos y consulta el estado de cuentas SEAZEP."
+        text="Administra solicitudes de registro, aprueba usuarios, suspende accesos y asocia cuentas a empresas reales de SEAZEP."
       />
 
       <div class="admin-access-panel">
@@ -43,9 +43,8 @@ import SectionTitle from "../../components/SectionTitle.astro";
           </a>
 
           <a class="btn btn-ghost" href="/admin/empresas">
-  Gestionar empresas
-</a>
-
+            Gestionar empresas
+          </a>
         </div>
 
         <p id="adminUsersStatus" class="form-status" aria-live="polite"></p>
@@ -152,6 +151,8 @@ import SectionTitle from "../../components/SectionTitle.astro";
   <script>
     const ADMIN_USERS_BASE_URL = "https://seazep-api.seazepfco.workers.dev/admin/users";
     const ADMIN_UPDATE_USER_STATUS_URL = "https://seazep-api.seazepfco.workers.dev/admin/users/update-status";
+    const ADMIN_ASSIGN_USER_COMPANY_URL = "https://seazep-api.seazepfco.workers.dev/admin/users/assign-company";
+    const ADMIN_COMPANIES_BASE_URL = "https://seazep-api.seazepfco.workers.dev/admin/companies";
 
     const adminKeyInput = document.getElementById("adminApiKey");
     const loadUsersButton = document.getElementById("loadUsersButton");
@@ -167,6 +168,8 @@ import SectionTitle from "../../components/SectionTitle.astro";
     const summaryUsersPending = document.getElementById("summaryUsersPending");
     const summaryUsersActive = document.getElementById("summaryUsersActive");
     const summaryUsersSuspended = document.getElementById("summaryUsersSuspended");
+
+    let availableCompanies = [];
 
     function getAdminKey() {
       return String(adminKeyInput?.value || "").trim();
@@ -219,6 +222,17 @@ import SectionTitle from "../../components/SectionTitle.astro";
       return `status-${String(status || "pending").replace(/[^a-z0-9_-]/gi, "")}`;
     }
 
+    function getCompanyStatusLabel(status) {
+      const labels = {
+        lead: "Prospecto",
+        active: "Activa",
+        suspended: "Suspendida",
+        archived: "Archivada"
+      };
+
+      return labels[status] || status || "Sin estado";
+    }
+
     function buildUsersUrl() {
       const params = new URLSearchParams();
 
@@ -245,6 +259,48 @@ import SectionTitle from "../../components/SectionTitle.astro";
       if (summaryUsersSuspended) summaryUsersSuspended.textContent = String(summary.suspended || 0);
     }
 
+    async function loadCompanyOptions(adminKey) {
+      const response = await fetch(`${ADMIN_COMPANIES_BASE_URL}?limit=100`, {
+        method: "GET",
+        mode: "cors",
+        headers: {
+          "x-admin-key": adminKey
+        }
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message || "No se pudieron cargar las empresas para asociar usuarios.");
+      }
+
+      availableCompanies = result.companies || [];
+    }
+
+    function buildCompanySelectOptions(selectedCompanyId) {
+      const selectedId = String(selectedCompanyId || "");
+
+      const baseOption = `
+        <option value="" ${!selectedId ? "selected" : ""}>
+          Sin empresa asociada
+        </option>
+      `;
+
+      const companyOptions = availableCompanies.map((company) => {
+        const companyId = String(company.id || "");
+        const selected = companyId === selectedId ? "selected" : "";
+        const label = `${company.name || "Empresa sin nombre"} — ${getCompanyStatusLabel(company.status)}`;
+
+        return `
+          <option value="${escapeHtml(companyId)}" ${selected}>
+            ${escapeHtml(label)}
+          </option>
+        `;
+      }).join("");
+
+      return `${baseOption}${companyOptions}`;
+    }
+
     function buildUserActionButtons(user) {
       const currentStatus = user.status || "pending";
 
@@ -267,6 +323,24 @@ import SectionTitle from "../../components/SectionTitle.astro";
               ${escapeHtml(action.label)}
             </button>
           `).join("")}
+
+          <div class="admin-user-company-actions">
+            <select
+              class="input admin-company-select"
+              data-company-select="${escapeHtml(user.id)}"
+            >
+              ${buildCompanySelectOptions(user.company_id)}
+            </select>
+
+            <button
+              class="admin-mini-btn convert"
+              type="button"
+              data-user-id="${escapeHtml(user.id)}"
+              data-user-action="assign-company"
+            >
+              Asignar empresa
+            </button>
+          </div>
         </div>
       `;
     }
@@ -295,8 +369,9 @@ import SectionTitle from "../../components/SectionTitle.astro";
           </td>
 
           <td>
-            <strong>${escapeHtml(user.company_name || "Sin empresa")}</strong>
-            <small>${escapeHtml(user.source || "website")}</small>
+            <strong>${escapeHtml(user.linked_company_name || "Sin empresa asociada")}</strong>
+            <small>Declarada: ${escapeHtml(user.company_name || "Sin empresa declarada")}</small>
+            <small>Estado empresa: ${escapeHtml(getCompanyStatusLabel(user.linked_company_status))}</small>
           </td>
 
           <td>
@@ -327,12 +402,14 @@ import SectionTitle from "../../components/SectionTitle.astro";
         return;
       }
 
-      setStatus("Cargando usuarios...");
+      setStatus("Cargando empresas y usuarios...");
 
       if (loadUsersButton) loadUsersButton.disabled = true;
       if (refreshUsersButton) refreshUsersButton.disabled = true;
 
       try {
+        await loadCompanyOptions(adminKey);
+
         const response = await fetch(buildUsersUrl(), {
           method: "GET",
           mode: "cors",
@@ -416,18 +493,87 @@ import SectionTitle from "../../components/SectionTitle.astro";
       }
     }
 
+    async function assignUserCompany(userId, button) {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus("Ingrese la clave ADM antes de asociar empresas.", "error");
+        return;
+      }
+
+      if (!userId) {
+        setStatus("Usuario no válido.", "error");
+        return;
+      }
+
+      const actionBox = button.closest(".admin-action-buttons");
+      const companySelect = actionBox?.querySelector(".admin-company-select");
+      const companyId = String(companySelect?.value || "").trim();
+
+      const note = window.prompt(
+        companyId
+          ? "Nota opcional para asociar este usuario a la empresa seleccionada:"
+          : "Nota opcional para desvincular este usuario de empresa:",
+        companyId
+          ? "Usuario asociado a empresa desde panel ADM."
+          : "Usuario desvinculado de empresa desde panel ADM."
+      );
+
+      if (note === null) {
+        return;
+      }
+
+      setStatus(companyId ? "Asociando usuario a empresa..." : "Desvinculando usuario de empresa...");
+
+      try {
+        const response = await fetch(ADMIN_ASSIGN_USER_COMPANY_URL, {
+          method: "POST",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey,
+            "content-type": "text/plain;charset=UTF-8"
+          },
+          body: JSON.stringify({
+            userId,
+            companyId,
+            note
+          })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudo asociar el usuario a la empresa.");
+        }
+
+        setStatus(result.message || "Usuario actualizado correctamente.", "success");
+        await loadUsers();
+      } catch (error) {
+        setStatus(error.message || "Error al asociar usuario a empresa.", "error");
+      }
+    }
+
     usersTableBody?.addEventListener("click", async (event) => {
-      const button = event.target.closest("[data-user-id][data-next-status]");
+      const button = event.target.closest("[data-user-id]");
 
       if (!button) return;
 
       const userId = button.dataset.userId;
       const status = button.dataset.nextStatus;
+      const userAction = button.dataset.userAction;
 
       button.disabled = true;
 
       try {
-        await updateUserStatus(userId, status);
+        if (userAction === "assign-company") {
+          await assignUserCompany(userId, button);
+          return;
+        }
+
+        if (status) {
+          await updateUserStatus(userId, status);
+          return;
+        }
       } finally {
         button.disabled = false;
       }

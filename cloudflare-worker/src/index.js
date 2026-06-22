@@ -96,6 +96,10 @@ if (url.pathname === "/admin/users/update-status" && request.method === "POST") 
 }
 
 
+  if (url.pathname === "/admin/users/assign-company" && request.method === "POST") {
+  return handleAdminAssignUserCompany(request, env);
+}
+
 
     if (url.pathname === "/admin/companies" && request.method === "GET") {
   return handleAdminListCompanies(request, env);
@@ -1379,6 +1383,7 @@ async function sha256Hex(value) {
 
 
 
+  
   async function handleAdminListUsers(request, env) {
   const auth = validateAdminRequest(request, env);
 
@@ -1404,7 +1409,7 @@ async function sha256Hex(value) {
   const params = [];
 
   if (status && status !== "all") {
-    whereParts.push("status = ?");
+    whereParts.push("u.status = ?");
     params.push(status);
   }
 
@@ -1412,15 +1417,21 @@ async function sha256Hex(value) {
     const likeSearch = `%${search}%`;
 
     whereParts.push(`(
-      full_name LIKE ?
-      OR email LIKE ?
-      OR company_name LIKE ?
-      OR phone LIKE ?
-      OR role LIKE ?
-      OR status LIKE ?
+      u.full_name LIKE ?
+      OR u.email LIKE ?
+      OR u.company_name LIKE ?
+      OR u.phone LIKE ?
+      OR u.role LIKE ?
+      OR u.status LIKE ?
+      OR c.name LIKE ?
+      OR c.legal_name LIKE ?
+      OR c.contact_email LIKE ?
     )`);
 
     params.push(
+      likeSearch,
+      likeSearch,
+      likeSearch,
       likeSearch,
       likeSearch,
       likeSearch,
@@ -1436,25 +1447,31 @@ async function sha256Hex(value) {
 
   const listSql = `
     SELECT
-      id,
-      full_name,
-      email,
-      company_name,
-      phone,
-      role,
-      status,
-      source,
-      created_at,
-      updated_at
-    FROM users
+      u.id,
+      u.full_name,
+      u.email,
+      u.company_name,
+      u.company_id,
+      u.phone,
+      u.role,
+      u.status,
+      u.source,
+      u.created_at,
+      u.updated_at,
+      c.name AS linked_company_name,
+      c.legal_name AS linked_company_legal_name,
+      c.status AS linked_company_status
+    FROM users u
+    LEFT JOIN companies c ON c.id = u.company_id
     ${whereSql}
-    ORDER BY created_at DESC
+    ORDER BY u.created_at DESC
     LIMIT ${limit}
   `;
 
   const countSql = `
     SELECT COUNT(*) AS total
-    FROM users
+    FROM users u
+    LEFT JOIN companies c ON c.id = u.company_id
     ${whereSql}
   `;
 
@@ -1507,6 +1524,7 @@ async function sha256Hex(value) {
     users: listResult.results || []
   });
 }
+
 
 
 
@@ -2738,6 +2756,156 @@ function escapeEmailHtml(value) {
 }
 
 
+
+
+  async function handleAdminAssignUserCompany(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const userId = cleanText(body.userId, 80);
+  const companyId = cleanText(body.companyId || "", 80);
+  const note = cleanText(body.note || "", 800);
+
+  if (!userId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_USER_ID",
+      message: "Falta el ID del usuario."
+    }, 400);
+  }
+
+  const existingUser = await env.DB.prepare(`
+    SELECT
+      id,
+      full_name,
+      email,
+      company_name,
+      company_id,
+      role,
+      status
+    FROM users
+    WHERE id = ?
+    LIMIT 1
+  `)
+    .bind(userId)
+    .first();
+
+  if (!existingUser) {
+    return corsResponse({
+      ok: false,
+      code: "USER_NOT_FOUND",
+      message: "No se encontró el usuario."
+    }, 404);
+  }
+
+  let company = null;
+
+  if (companyId) {
+    company = await env.DB.prepare(`
+      SELECT
+        id,
+        name,
+        legal_name,
+        status
+      FROM companies
+      WHERE id = ?
+      LIMIT 1
+    `)
+      .bind(companyId)
+      .first();
+
+    if (!company) {
+      return corsResponse({
+        ok: false,
+        code: "COMPANY_NOT_FOUND",
+        message: "No se encontró la empresa seleccionada."
+      }, 404);
+    }
+  }
+
+  const previousCompanyId = existingUser.company_id || null;
+  const now = new Date().toISOString();
+
+  await env.DB.prepare(`
+    UPDATE users
+    SET
+      company_id = ?,
+      updated_at = ?
+    WHERE id = ?
+  `)
+    .bind(companyId || null, now, userId)
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      "temporary-admin",
+      "admin_user_company_assigned",
+      "users",
+      userId,
+      JSON.stringify({
+        userId,
+        fullName: existingUser.full_name,
+        email: existingUser.email,
+        declaredCompanyName: existingUser.company_name || "",
+        previousCompanyId,
+        newCompanyId: companyId || null,
+        companyName: company?.name || null,
+        companyStatus: company?.status || null,
+        note
+      }),
+      now
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    message: companyId
+      ? "Usuario asociado a empresa correctamente."
+      : "Usuario desvinculado de empresa correctamente.",
+    userId,
+    previousCompanyId,
+    companyId: companyId || null,
+    company: company
+      ? {
+          id: company.id,
+          name: company.name,
+          legalName: company.legal_name || "",
+          status: company.status || ""
+        }
+      : null,
+    updatedAt: now
+  });
+}
 
 
 function validateAdminRequest(request, env) {

@@ -1423,3 +1423,29 @@ sers\azada\Documents\PROYECTOS_SOFTWARE\SEAZEP\SEAZEP-WEB\src\styles\global.css
 
 
 
+.admin-user-company-actions {
+  display: grid;
+  gap: 8px;
+  min-width: 220px;
+}
+
+.admin-company-select {
+  width: 100%;
+  min-width: 220px;
+  font-size: 11px;
+  padding: 8px 10px;
+}
+
+.admin-action-buttons .admin-user-company-actions {
+  margin-top: 4px;
+}
+
+@media (max-width: 760px) {
+  .admin-user-company-actions,
+  .admin-company-select {
+    min-width: 100%;
+  }
+}
+
+
+
