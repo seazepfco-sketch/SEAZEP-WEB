@@ -136,10 +136,7 @@ if (url.pathname === "/admin/manuals/assign-company" && request.method === "POST
   return handleAdminListManualDownloads(request, env);
 }
 
-  if (url.pathname === "/admin/manual-downloads" && request.method === "GET") {
-  return handleAdminListManualDownloads(request, env);
-}
-
+  
 if (url.pathname === "/user/manuals" && request.method === "GET") {
   return handleUserListManuals(request, env);
 }
