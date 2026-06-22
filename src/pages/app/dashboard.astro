@@ -81,6 +81,35 @@ import SectionTitle from "../../components/SectionTitle.astro";
           recursos privados, manuales autorizados y permisos por empresa o software.
         </p>
       </section>
+
+      <section class="section user-manuals-section">
+  <div class="container">
+    <div class="admin-section-header">
+      <div>
+        <span class="eyebrow">Recursos autorizados</span>
+        <h2>Mis manuales disponibles</h2>
+        <p>
+          Manuales, guías y documentos técnicos habilitados para su empresa asociada.
+        </p>
+      </div>
+
+      <button class="btn btn-ghost" id="refreshUserManualsButton" type="button">
+        Actualizar manuales
+      </button>
+    </div>
+
+    <p id="userManualsStatus" class="form-status" aria-live="polite"></p>
+
+    <div class="manuals-user-grid" id="userManualsGrid">
+      <article class="card">
+        <span class="eyebrow">Manuales</span>
+        <h3>Cargando recursos...</h3>
+        <p>Espere mientras se consultan los manuales autorizados.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
     </section>
 
     <section class="user-dashboard-shell" id="userDashboardBlocked">
@@ -107,6 +136,9 @@ import SectionTitle from "../../components/SectionTitle.astro";
     const dashboardUserName = document.getElementById("dashboardUserName");
     const dashboardUserEmail = document.getElementById("dashboardUserEmail");
     const dashboardCompanyName = document.getElementById("dashboardCompanyName");
+    const userManualsGrid = document.getElementById("userManualsGrid");
+    const userManualsStatus = document.getElementById("userManualsStatus");
+    const refreshUserManualsButton = document.getElementById("refreshUserManualsButton");
     const dashboardLinkedCompanyName = document.getElementById("dashboardLinkedCompanyName");
     const dashboardLinkedCompanyStatus = document.getElementById("dashboardLinkedCompanyStatus");
     const dashboardPhone = document.getElementById("dashboardPhone");
@@ -132,6 +164,142 @@ import SectionTitle from "../../components/SectionTitle.astro";
 
   return labels[status] || status || "N/D";
 }
+
+
+  function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function getManualVisibilityLabel(visibility) {
+  const labels = {
+    private: "Privado",
+    public: "Público"
+  };
+
+  return labels[visibility] || visibility || "Privado";
+}
+
+function getManualCategoryLabel(category) {
+  return category || "General";
+}
+
+function normalizeManualUrl(fileUrl) {
+  const url = String(fileUrl || "").trim();
+
+  if (!url) {
+    return "";
+  }
+
+  return url;
+}
+
+function setUserManualsStatus(message, type = "") {
+  if (!userManualsStatus) return;
+
+  userManualsStatus.textContent = message;
+  userManualsStatus.className = type ? `form-status ${type}` : "form-status";
+}
+
+function renderUserManuals(manuals = []) {
+  if (!userManualsGrid) return;
+
+  if (!manuals.length) {
+    userManualsGrid.innerHTML = `
+      <article class="card">
+        <span class="eyebrow">Sin manuales</span>
+        <h3>No hay manuales disponibles</h3>
+        <p>
+          Su empresa aún no tiene manuales activos asignados o los recursos están pendientes de autorización.
+        </p>
+      </article>
+    `;
+    return;
+  }
+
+  userManualsGrid.innerHTML = manuals.map((manual) => {
+    const fileUrl = normalizeManualUrl(manual.file_url);
+    const hasFile = Boolean(fileUrl);
+
+    return `
+      <article class="card user-manual-card">
+        <span class="eyebrow">${escapeHtml(getManualCategoryLabel(manual.category))}</span>
+        <h3>${escapeHtml(manual.title || "Manual sin título")}</h3>
+
+        <p>
+          ${escapeHtml(manual.description || "Manual técnico autorizado para su empresa.")}
+        </p>
+
+        <div class="user-manual-meta">
+          <span>Versión: ${escapeHtml(manual.version || "N/D")}</span>
+          <span>Visibilidad: ${escapeHtml(getManualVisibilityLabel(manual.visibility))}</span>
+        </div>
+
+        ${
+          hasFile
+            ? `<a class="btn btn-primary" href="${escapeHtml(fileUrl)}" target="_blank" rel="noopener noreferrer">
+                Abrir manual
+              </a>`
+            : `<button class="btn btn-secondary" type="button" disabled>
+                Archivo no disponible
+              </button>`
+        }
+      </article>
+    `;
+  }).join("");
+}
+
+async function loadUserManuals() {
+  const token = localStorage.getItem("seazep_session_token");
+
+  if (!token) {
+    setUserManualsStatus("Sesión no encontrada. Inicie sesión nuevamente.", "error");
+    renderUserManuals([]);
+    return;
+  }
+
+  setUserManualsStatus("Consultando manuales autorizados...");
+
+  if (refreshUserManualsButton) {
+    refreshUserManualsButton.disabled = true;
+  }
+
+  try {
+    const response = await fetch("https://seazep-api.seazepfco.workers.dev/user/manuals", {
+      method: "GET",
+      mode: "cors",
+      headers: {
+        "authorization": `Bearer ${token}`
+      }
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.ok) {
+      throw new Error(result.message || "No se pudieron cargar los manuales.");
+    }
+
+    renderUserManuals(result.manuals || []);
+
+    setUserManualsStatus(
+      `Manuales disponibles: ${result.count || 0}`,
+      "success"
+    );
+  } catch (error) {
+    renderUserManuals([]);
+    setUserManualsStatus(error.message || "Error al cargar manuales.", "error");
+  } finally {
+    if (refreshUserManualsButton) {
+      refreshUserManualsButton.disabled = false;
+    }
+  }
+}
+
+
 
 
     function formatSessionDate(value) {
@@ -243,12 +411,17 @@ if (dashboardLinkedCompanyStatus) {
 
       if (dashboardShell) dashboardShell.hidden = false;
       if (dashboardBlocked) dashboardBlocked.hidden = true;
+
+        loadUserManuals();
     }
 
     dashboardLogoutButton?.addEventListener("click", () => {
       clearSeazepSession();
       window.location.href = "/acceso";
     });
+
+     refreshUserManualsButton?.addEventListener("click", loadUserManuals);
+     
 
     renderDashboard();
   </script>
