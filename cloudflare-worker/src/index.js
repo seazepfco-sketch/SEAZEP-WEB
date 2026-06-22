@@ -136,6 +136,18 @@ if (url.pathname === "/admin/manuals/assign-company" && request.method === "POST
   return handleAdminListManualDownloads(request, env);
 }
 
+  if (url.pathname === "/admin/licenses" && request.method === "GET") {
+  return handleAdminListLicenses(request, env);
+}
+
+if (url.pathname === "/admin/licenses" && request.method === "POST") {
+  return handleAdminCreateLicense(request, env);
+}
+
+if (url.pathname === "/admin/licenses/update-status" && request.method === "POST") {
+  return handleAdminUpdateLicenseStatus(request, env);
+}
+
   
 if (url.pathname === "/user/manuals" && request.method === "GET") {
   return handleUserListManuals(request, env);
@@ -4186,6 +4198,605 @@ function getSafeManualFileName(value) {
     },
     downloads: listResult.results || []
   });
+}
+
+
+  async function handleAdminListLicenses(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  const url = new URL(request.url);
+
+  const status = cleanText(url.searchParams.get("status") || "", 40);
+  const companyId = cleanText(url.searchParams.get("companyId") || "", 80);
+  const productId = cleanText(url.searchParams.get("productId") || "", 80);
+  const search = cleanText(url.searchParams.get("search") || "", 120);
+
+  const rawLimit = Number(url.searchParams.get("limit") || 50);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(Math.trunc(rawLimit), 1), 100)
+    : 50;
+
+  const whereParts = [];
+  const params = [];
+
+  if (status && status !== "all") {
+    whereParts.push("l.status = ?");
+    params.push(status);
+  }
+
+  if (companyId && companyId !== "all") {
+    whereParts.push("l.company_id = ?");
+    params.push(companyId);
+  }
+
+  if (productId && productId !== "all") {
+    whereParts.push("l.product_id = ?");
+    params.push(productId);
+  }
+
+  if (search) {
+    const likeSearch = `%${search}%`;
+
+    whereParts.push(`(
+      l.license_id LIKE ?
+      OR l.license_name LIKE ?
+      OR l.machine_id LIKE ?
+      OR l.notes LIKE ?
+      OR c.name LIKE ?
+      OR c.legal_name LIKE ?
+      OR c.contact_email LIKE ?
+      OR sp.name LIKE ?
+      OR sp.slug LIKE ?
+    )`);
+
+    params.push(
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch
+    );
+  }
+
+  const whereSql = whereParts.length
+    ? `WHERE ${whereParts.join(" AND ")}`
+    : "";
+
+  const listSql = `
+    SELECT
+      l.id,
+      l.company_id,
+      c.name AS company_name,
+      c.legal_name AS company_legal_name,
+      c.status AS company_status,
+      l.product_id,
+      sp.slug AS product_slug,
+      sp.name AS product_name,
+      sp.status AS product_status,
+      l.license_id,
+      l.license_name,
+      l.machine_id,
+      l.status,
+      l.starts_at,
+      l.activated_at,
+      l.expires_at,
+      l.max_users,
+      l.max_devices,
+      l.notes,
+      l.created_at,
+      l.updated_at,
+      COUNT(la.id) AS activations_count
+    FROM licenses l
+    LEFT JOIN companies c ON c.id = l.company_id
+    LEFT JOIN software_products sp ON sp.id = l.product_id
+    LEFT JOIN license_activations la
+      ON la.license_id = l.license_id
+      AND la.status = 'active'
+    ${whereSql}
+    GROUP BY
+      l.id,
+      l.company_id,
+      c.name,
+      c.legal_name,
+      c.status,
+      l.product_id,
+      sp.slug,
+      sp.name,
+      sp.status,
+      l.license_id,
+      l.license_name,
+      l.machine_id,
+      l.status,
+      l.starts_at,
+      l.activated_at,
+      l.expires_at,
+      l.max_users,
+      l.max_devices,
+      l.notes,
+      l.created_at,
+      l.updated_at
+    ORDER BY COALESCE(l.updated_at, l.created_at) DESC
+    LIMIT ${limit}
+  `;
+
+  const countSql = `
+    SELECT COUNT(*) AS total
+    FROM licenses l
+    LEFT JOIN companies c ON c.id = l.company_id
+    LEFT JOIN software_products sp ON sp.id = l.product_id
+    ${whereSql}
+  `;
+
+  const listStatement = env.DB.prepare(listSql);
+  const countStatement = env.DB.prepare(countSql);
+
+  const listResult = params.length
+    ? await listStatement.bind(...params).all()
+    : await listStatement.all();
+
+  const countResult = params.length
+    ? await countStatement.bind(...params).first()
+    : await countStatement.first();
+
+  const summaryResult = await env.DB.prepare(`
+    SELECT
+      COALESCE(status, 'active') AS status,
+      COUNT(*) AS total
+    FROM licenses
+    GROUP BY COALESCE(status, 'active')
+  `).all();
+
+  const totalAllResult = await env.DB.prepare(`
+    SELECT COUNT(*) AS total
+    FROM licenses
+  `).first();
+
+  const summary = {
+    total: Number(totalAllResult?.total || 0),
+    active: 0,
+    suspended: 0,
+    expired: 0,
+    revoked: 0
+  };
+
+  for (const row of summaryResult.results || []) {
+    const key = row.status || "active";
+    summary[key] = Number(row.total || 0);
+  }
+
+  return corsResponse({
+    ok: true,
+    count: (listResult.results || []).length,
+    total: Number(countResult?.total || 0),
+    limit,
+    filters: {
+      status: status || "all",
+      companyId: companyId || "all",
+      productId: productId || "all",
+      search
+    },
+    summary,
+    licenses: listResult.results || []
+  });
+}
+
+async function handleAdminCreateLicense(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const companyId = cleanText(body.companyId, 80);
+  const productId = cleanText(body.productId || "spz-product-smartpozo360", 80);
+  const licenseName = cleanText(body.licenseName || "", 180);
+  const licenseId = cleanText(body.licenseId || generateLicenseCode(), 120).toUpperCase();
+  const status = cleanText(body.status || "active", 40);
+  const startsAt = cleanText(body.startsAt || "", 80);
+  const expiresAt = cleanText(body.expiresAt || "", 80);
+  const maxUsers = parsePositiveInteger(body.maxUsers, 3);
+  const maxDevices = parsePositiveInteger(body.maxDevices, 1);
+  const notes = cleanText(body.notes || "", 1200);
+
+  const allowedStatuses = [
+    "active",
+    "suspended",
+    "expired",
+    "revoked"
+  ];
+
+  if (!companyId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_COMPANY_ID",
+      message: "Falta seleccionar la empresa."
+    }, 400);
+  }
+
+  if (!productId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_PRODUCT_ID",
+      message: "Falta seleccionar el software."
+    }, 400);
+  }
+
+  if (!licenseId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_LICENSE_ID",
+      message: "Falta el identificador de licencia."
+    }, 400);
+  }
+
+  if (!allowedStatuses.includes(status)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_STATUS",
+      message: "Estado de licencia no permitido."
+    }, 400);
+  }
+
+  const company = await env.DB.prepare(`
+    SELECT
+      id,
+      name,
+      status
+    FROM companies
+    WHERE id = ?
+    LIMIT 1
+  `)
+    .bind(companyId)
+    .first();
+
+  if (!company) {
+    return corsResponse({
+      ok: false,
+      code: "COMPANY_NOT_FOUND",
+      message: "No se encontró la empresa seleccionada."
+    }, 404);
+  }
+
+  const product = await env.DB.prepare(`
+    SELECT
+      id,
+      slug,
+      name,
+      status
+    FROM software_products
+    WHERE id = ?
+    LIMIT 1
+  `)
+    .bind(productId)
+    .first();
+
+  if (!product) {
+    return corsResponse({
+      ok: false,
+      code: "PRODUCT_NOT_FOUND",
+      message: "No se encontró el software seleccionado."
+    }, 404);
+  }
+
+  const existingLicense = await env.DB.prepare(`
+    SELECT
+      id,
+      license_id
+    FROM licenses
+    WHERE upper(license_id) = upper(?)
+    LIMIT 1
+  `)
+    .bind(licenseId)
+    .first();
+
+  if (existingLicense) {
+    return corsResponse({
+      ok: false,
+      code: "LICENSE_ID_EXISTS",
+      message: "Ya existe una licencia con ese identificador."
+    }, 409);
+  }
+
+  const now = new Date().toISOString();
+  const licenseDbId = crypto.randomUUID();
+  const normalizedStartsAt = startsAt || now;
+  const normalizedExpiresAt = expiresAt || null;
+
+  await env.DB.prepare(`
+    INSERT INTO licenses (
+      id,
+      company_id,
+      product_id,
+      license_id,
+      license_name,
+      machine_id,
+      status,
+      activated_at,
+      starts_at,
+      expires_at,
+      max_users,
+      max_devices,
+      notes,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      licenseDbId,
+      companyId,
+      productId,
+      licenseId,
+      licenseName || `Licencia ${product.name} — ${company.name}`,
+      null,
+      status,
+      null,
+      normalizedStartsAt,
+      normalizedExpiresAt,
+      maxUsers,
+      maxDevices,
+      notes || null,
+      now,
+      now
+    )
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      "temporary-admin",
+      "admin_license_created",
+      "licenses",
+      licenseDbId,
+      JSON.stringify({
+        companyId,
+        companyName: company.name,
+        productId,
+        productName: product.name,
+        licenseId,
+        licenseName,
+        status,
+        startsAt: normalizedStartsAt,
+        expiresAt: normalizedExpiresAt,
+        maxUsers,
+        maxDevices,
+        notes
+      }),
+      now
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    id: licenseDbId,
+    message: "Licencia creada correctamente.",
+    license: {
+      id: licenseDbId,
+      companyId,
+      companyName: company.name,
+      productId,
+      productName: product.name,
+      licenseId,
+      licenseName: licenseName || `Licencia ${product.name} — ${company.name}`,
+      status,
+      startsAt: normalizedStartsAt,
+      expiresAt: normalizedExpiresAt,
+      maxUsers,
+      maxDevices,
+      notes,
+      createdAt: now,
+      updatedAt: now
+    }
+  }, 201);
+}
+
+async function handleAdminUpdateLicenseStatus(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const id = cleanText(body.id, 80);
+  const status = cleanText(body.status, 40);
+  const note = cleanText(body.note || "", 800);
+
+  const allowedStatuses = [
+    "active",
+    "suspended",
+    "expired",
+    "revoked"
+  ];
+
+  if (!id) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_LICENSE_DB_ID",
+      message: "Falta el ID interno de la licencia."
+    }, 400);
+  }
+
+  if (!allowedStatuses.includes(status)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_STATUS",
+      message: "Estado de licencia no permitido."
+    }, 400);
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT
+      l.id,
+      l.license_id,
+      l.license_name,
+      l.status,
+      l.company_id,
+      l.product_id,
+      c.name AS company_name,
+      sp.name AS product_name
+    FROM licenses l
+    LEFT JOIN companies c ON c.id = l.company_id
+    LEFT JOIN software_products sp ON sp.id = l.product_id
+    WHERE l.id = ?
+    LIMIT 1
+  `)
+    .bind(id)
+    .first();
+
+  if (!existing) {
+    return corsResponse({
+      ok: false,
+      code: "LICENSE_NOT_FOUND",
+      message: "No se encontró la licencia."
+    }, 404);
+  }
+
+  const previousStatus = existing.status || "active";
+  const now = new Date().toISOString();
+
+  await env.DB.prepare(`
+    UPDATE licenses
+    SET
+      status = ?,
+      updated_at = ?
+    WHERE id = ?
+  `)
+    .bind(status, now, id)
+    .run();
+
+  if (status === "suspended" || status === "revoked" || status === "expired") {
+    await env.DB.prepare(`
+      UPDATE license_activations
+      SET
+        status = ?
+      WHERE license_id = ?
+        AND status = 'active'
+    `)
+      .bind(status, existing.license_id)
+      .run();
+  }
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      "temporary-admin",
+      "admin_license_status_updated",
+      "licenses",
+      id,
+      JSON.stringify({
+        licenseDbId: id,
+        licenseId: existing.license_id,
+        licenseName: existing.license_name || "",
+        companyId: existing.company_id || "",
+        companyName: existing.company_name || "",
+        productId: existing.product_id || "",
+        productName: existing.product_name || "",
+        previousStatus,
+        newStatus: status,
+        note
+      }),
+      now
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    id,
+    licenseId: existing.license_id,
+    previousStatus,
+    status,
+    message: "Estado de licencia actualizado correctamente.",
+    updatedAt: now
+  });
+}
+
+function generateLicenseCode() {
+  const randomBytes = crypto.getRandomValues(new Uint8Array(9));
+  const code = bytesToBase64Url(randomBytes)
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toUpperCase()
+    .slice(0, 12);
+
+  return `SPZ-${code.slice(0, 4)}-${code.slice(4, 8)}-${code.slice(8, 12)}`;
+}
+
+function parsePositiveInteger(value, fallback) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return fallback;
+  }
+
+  const integer = Math.trunc(number);
+
+  if (integer < 1) {
+    return fallback;
+  }
+
+  return integer;
 }
 
 

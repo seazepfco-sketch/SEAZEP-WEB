@@ -1,0 +1,773 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import Header from "../../components/Header.astro";
+import Footer from "../../components/Footer.astro";
+import SectionTitle from "../../components/SectionTitle.astro";
+---
+
+<BaseLayout title="Licencias ADM | SEAZEP">
+  <Header active="admin" />
+
+  <main>
+    <section class="section">
+      <SectionTitle
+        eyebrow="ADM SEAZEP"
+        title="Licencias SmartPozo360."
+        text="Administre licencias por empresa, vigencia, estado, usuarios permitidos y dispositivos autorizados."
+      />
+
+      <div class="admin-access-panel">
+        <div>
+          <h3>Acceso temporal ADM</h3>
+          <p>
+            Ingrese la clave administrativa para consultar y administrar licencias.
+          </p>
+        </div>
+
+        <div class="admin-key-form">
+          <input
+            class="input"
+            id="adminApiKey"
+            type="password"
+            placeholder="Clave ADM temporal"
+            autocomplete="off"
+          />
+
+          <button class="btn btn-primary" id="loadLicensesButton" type="button">
+            Cargar licencias
+          </button>
+
+          <a class="btn btn-ghost" href="/admin/empresas">
+            Empresas
+          </a>
+
+          <a class="btn btn-ghost" href="/admin/usuarios">
+            Usuarios
+          </a>
+
+          <a class="btn btn-ghost" href="/admin/manuales">
+            Manuales
+          </a>
+        </div>
+
+        <p id="adminLicensesStatus" class="form-status" aria-live="polite"></p>
+      </div>
+
+      <section class="admin-filter-panel license-create-panel">
+        <div class="admin-filter-header">
+          <div>
+            <span class="eyebrow">Nueva licencia</span>
+            <h3>Crear licencia SmartPozo360</h3>
+          </div>
+        </div>
+
+        <form class="license-form-grid" id="createLicenseForm">
+          <label class="admin-filter-field">
+            <span>Empresa</span>
+            <select class="input" id="licenseCompanySelect" required>
+              <option value="">Cargue empresas con la clave ADM</option>
+            </select>
+          </label>
+
+          <label class="admin-filter-field">
+            <span>Software</span>
+            <input
+              class="input"
+              value="SmartPozo360"
+              disabled
+            />
+          </label>
+
+          <label class="admin-filter-field">
+            <span>Nombre de licencia</span>
+            <input
+              class="input"
+              id="licenseNameInput"
+              placeholder="Licencia SmartPozo360 anual"
+            />
+          </label>
+
+          <label class="admin-filter-field">
+            <span>ID de licencia</span>
+            <input
+              class="input"
+              id="licenseCodeInput"
+              placeholder="Automático si se deja vacío"
+            />
+          </label>
+
+          <label class="admin-filter-field">
+            <span>Estado</span>
+            <select class="input" id="licenseStatusInput">
+              <option value="active">Activa</option>
+              <option value="suspended">Suspendida</option>
+              <option value="expired">Expirada</option>
+              <option value="revoked">Revocada</option>
+            </select>
+          </label>
+
+          <label class="admin-filter-field">
+            <span>Máx. usuarios</span>
+            <input
+              class="input"
+              id="licenseMaxUsersInput"
+              type="number"
+              min="1"
+              value="3"
+            />
+          </label>
+
+          <label class="admin-filter-field">
+            <span>Máx. dispositivos</span>
+            <input
+              class="input"
+              id="licenseMaxDevicesInput"
+              type="number"
+              min="1"
+              value="1"
+            />
+          </label>
+
+          <label class="admin-filter-field">
+            <span>Inicio</span>
+            <input
+              class="input"
+              id="licenseStartsAtInput"
+              type="date"
+            />
+          </label>
+
+          <label class="admin-filter-field">
+            <span>Vencimiento</span>
+            <input
+              class="input"
+              id="licenseExpiresAtInput"
+              type="date"
+            />
+          </label>
+
+          <label class="admin-filter-field license-notes-field">
+            <span>Notas</span>
+            <textarea
+              class="input"
+              id="licenseNotesInput"
+              placeholder="Observaciones internas de la licencia"
+            ></textarea>
+          </label>
+
+          <button class="btn btn-primary" type="submit">
+            Crear licencia
+          </button>
+        </form>
+      </section>
+
+      <section class="admin-filter-panel">
+        <div class="admin-filter-header">
+          <div>
+            <span class="eyebrow">Filtros ADM</span>
+            <h3>Consulta de licencias</h3>
+          </div>
+
+          <button class="btn btn-secondary" type="button" id="clearLicenseFiltersButton">
+            Limpiar filtros
+          </button>
+        </div>
+
+        <div class="admin-filter-grid">
+          <label class="admin-filter-field">
+            <span>Estado</span>
+            <select class="input" id="licenseStatusFilter">
+              <option value="all">Todos</option>
+              <option value="active">Activas</option>
+              <option value="suspended">Suspendidas</option>
+              <option value="expired">Expiradas</option>
+              <option value="revoked">Revocadas</option>
+            </select>
+          </label>
+
+          <label class="admin-filter-field">
+            <span>Empresa</span>
+            <select class="input" id="licenseCompanyFilter">
+              <option value="all">Todas</option>
+            </select>
+          </label>
+
+          <label class="admin-filter-field admin-filter-search">
+            <span>Buscar</span>
+            <input
+              class="input"
+              id="licenseSearchInput"
+              placeholder="Licencia, empresa, correo, software o nota"
+            />
+          </label>
+        </div>
+
+        <div class="admin-summary-grid licenses-summary-grid">
+          <article class="admin-summary-card">
+            <span>Total</span>
+            <strong id="summaryTotalLicenses">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Activas</span>
+            <strong id="summaryActiveLicenses">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Suspendidas</span>
+            <strong id="summarySuspendedLicenses">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Expiradas</span>
+            <strong id="summaryExpiredLicenses">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Revocadas</span>
+            <strong id="summaryRevokedLicenses">0</strong>
+          </article>
+        </div>
+      </section>
+
+      <section class="admin-requests-section">
+        <div class="admin-section-header">
+          <div>
+            <span class="eyebrow">Registros</span>
+            <h2>Licencias registradas.</h2>
+          </div>
+
+          <button class="btn btn-ghost" id="refreshLicensesButton" type="button">
+            Actualizar
+          </button>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Licencia</th>
+                <th>Empresa</th>
+                <th>Software</th>
+                <th>Estado</th>
+                <th>Vigencia</th>
+                <th>Límites</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+
+            <tbody id="licensesTableBody">
+              <tr>
+                <td colspan="7" class="admin-empty">
+                  Ingrese la clave ADM y presione “Cargar licencias”.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <Footer />
+
+  <script>
+    const ADMIN_LICENSES_URL = "https://seazep-api.seazepfco.workers.dev/admin/licenses";
+    const ADMIN_LICENSE_STATUS_URL = "https://seazep-api.seazepfco.workers.dev/admin/licenses/update-status";
+    const ADMIN_COMPANIES_URL = "https://seazep-api.seazepfco.workers.dev/admin/companies";
+    const SMARTPOZO360_PRODUCT_ID = "spz-product-smartpozo360";
+
+    const adminKeyInput = document.getElementById("adminApiKey");
+    const loadLicensesButton = document.getElementById("loadLicensesButton");
+    const refreshLicensesButton = document.getElementById("refreshLicensesButton");
+    const clearLicenseFiltersButton = document.getElementById("clearLicenseFiltersButton");
+    const statusEl = document.getElementById("adminLicensesStatus");
+
+    const createLicenseForm = document.getElementById("createLicenseForm");
+    const licenseCompanySelect = document.getElementById("licenseCompanySelect");
+    const licenseCompanyFilter = document.getElementById("licenseCompanyFilter");
+    const licenseNameInput = document.getElementById("licenseNameInput");
+    const licenseCodeInput = document.getElementById("licenseCodeInput");
+    const licenseStatusInput = document.getElementById("licenseStatusInput");
+    const licenseMaxUsersInput = document.getElementById("licenseMaxUsersInput");
+    const licenseMaxDevicesInput = document.getElementById("licenseMaxDevicesInput");
+    const licenseStartsAtInput = document.getElementById("licenseStartsAtInput");
+    const licenseExpiresAtInput = document.getElementById("licenseExpiresAtInput");
+    const licenseNotesInput = document.getElementById("licenseNotesInput");
+
+    const licenseStatusFilter = document.getElementById("licenseStatusFilter");
+    const licenseSearchInput = document.getElementById("licenseSearchInput");
+    const licensesTableBody = document.getElementById("licensesTableBody");
+
+    const summaryTotalLicenses = document.getElementById("summaryTotalLicenses");
+    const summaryActiveLicenses = document.getElementById("summaryActiveLicenses");
+    const summarySuspendedLicenses = document.getElementById("summarySuspendedLicenses");
+    const summaryExpiredLicenses = document.getElementById("summaryExpiredLicenses");
+    const summaryRevokedLicenses = document.getElementById("summaryRevokedLicenses");
+
+    function getAdminKey() {
+      return String(adminKeyInput?.value || "").trim();
+    }
+
+    function setStatus(message, type = "") {
+      if (!statusEl) return;
+      statusEl.textContent = message;
+      statusEl.className = type ? `form-status ${type}` : "form-status";
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function getLicenseStatusLabel(status) {
+      const labels = {
+        active: "Activa",
+        suspended: "Suspendida",
+        expired: "Expirada",
+        revoked: "Revocada"
+      };
+
+      return labels[status] || status || "N/D";
+    }
+
+    function formatDate(value) {
+      if (!value) return "N/D";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) {
+        return value;
+      }
+
+      return date.toLocaleDateString("es-MX", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      });
+    }
+
+    function toIsoStartOfDay(value) {
+      if (!value) return "";
+
+      return `${value}T00:00:00.000Z`;
+    }
+
+    function toIsoEndOfDay(value) {
+      if (!value) return "";
+
+      return `${value}T23:59:59.000Z`;
+    }
+
+    function setDefaultDates() {
+      const now = new Date();
+      const nextYear = new Date(now);
+
+      nextYear.setFullYear(now.getFullYear() + 1);
+
+      if (licenseStartsAtInput && !licenseStartsAtInput.value) {
+        licenseStartsAtInput.value = now.toISOString().slice(0, 10);
+      }
+
+      if (licenseExpiresAtInput && !licenseExpiresAtInput.value) {
+        licenseExpiresAtInput.value = nextYear.toISOString().slice(0, 10);
+      }
+    }
+
+    function buildLicensesUrl() {
+      const params = new URLSearchParams();
+
+      params.set("limit", "100");
+      params.set("productId", SMARTPOZO360_PRODUCT_ID);
+
+      const status = String(licenseStatusFilter?.value || "all");
+      const companyId = String(licenseCompanyFilter?.value || "all");
+      const search = String(licenseSearchInput?.value || "").trim();
+
+      if (status !== "all") {
+        params.set("status", status);
+      }
+
+      if (companyId !== "all") {
+        params.set("companyId", companyId);
+      }
+
+      if (search) {
+        params.set("search", search);
+      }
+
+      return `${ADMIN_LICENSES_URL}?${params.toString()}`;
+    }
+
+    function updateSummary(summary = {}) {
+      if (summaryTotalLicenses) {
+        summaryTotalLicenses.textContent = String(summary.total || 0);
+      }
+
+      if (summaryActiveLicenses) {
+        summaryActiveLicenses.textContent = String(summary.active || 0);
+      }
+
+      if (summarySuspendedLicenses) {
+        summarySuspendedLicenses.textContent = String(summary.suspended || 0);
+      }
+
+      if (summaryExpiredLicenses) {
+        summaryExpiredLicenses.textContent = String(summary.expired || 0);
+      }
+
+      if (summaryRevokedLicenses) {
+        summaryRevokedLicenses.textContent = String(summary.revoked || 0);
+      }
+    }
+
+    function renderCompanies(companies = []) {
+      const activeCompanies = companies.filter((company) => company.status !== "archived");
+
+      if (licenseCompanySelect) {
+        licenseCompanySelect.innerHTML = `
+          <option value="">Seleccione empresa</option>
+          ${activeCompanies.map((company) => `
+            <option value="${escapeHtml(company.id)}">
+              ${escapeHtml(company.name || "Empresa sin nombre")} — ${escapeHtml(company.status || "N/D")}
+            </option>
+          `).join("")}
+        `;
+      }
+
+      if (licenseCompanyFilter) {
+        licenseCompanyFilter.innerHTML = `
+          <option value="all">Todas</option>
+          ${activeCompanies.map((company) => `
+            <option value="${escapeHtml(company.id)}">
+              ${escapeHtml(company.name || "Empresa sin nombre")}
+            </option>
+          `).join("")}
+        `;
+      }
+    }
+
+    function renderLicenses(licenses = []) {
+      if (!licensesTableBody) return;
+
+      if (!licenses.length) {
+        licensesTableBody.innerHTML = `
+          <tr>
+            <td colspan="7" class="admin-empty">
+              No hay licencias registradas con esos filtros.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      licensesTableBody.innerHTML = licenses.map((license) => `
+        <tr>
+          <td>
+            <strong>${escapeHtml(license.license_name || "Licencia sin nombre")}</strong>
+            <small>ID: ${escapeHtml(license.license_id || "N/D")}</small>
+            <small>Interno: ${escapeHtml(String(license.id || "").slice(0, 8))}...</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(license.company_name || "Empresa no encontrada")}</strong>
+            <small>${escapeHtml(license.company_legal_name || "Sin razón social")}</small>
+            <small>Estado empresa: ${escapeHtml(license.company_status || "N/D")}</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(license.product_name || "Software no encontrado")}</strong>
+            <small>${escapeHtml(license.product_slug || "N/D")}</small>
+          </td>
+
+          <td>
+            <span class="admin-status-pill status-${escapeHtml(license.status || "active")}">
+              ${escapeHtml(getLicenseStatusLabel(license.status))}
+            </span>
+          </td>
+
+          <td>
+            <strong>Inicio: ${escapeHtml(formatDate(license.starts_at || license.created_at))}</strong>
+            <small>Vence: ${escapeHtml(formatDate(license.expires_at))}</small>
+          </td>
+
+          <td>
+            <strong>Usuarios: ${escapeHtml(license.max_users || 1)}</strong>
+            <small>Dispositivos: ${escapeHtml(license.max_devices || 1)}</small>
+            <small>Activaciones: ${escapeHtml(license.activations_count || 0)}</small>
+          </td>
+
+          <td>
+            <div class="admin-action-buttons license-actions">
+              <button
+                class="btn btn-secondary"
+                type="button"
+                data-license-id="${escapeHtml(license.id)}"
+                data-next-status="active"
+              >
+                Activar
+              </button>
+
+              <button
+                class="btn btn-secondary"
+                type="button"
+                data-license-id="${escapeHtml(license.id)}"
+                data-next-status="suspended"
+              >
+                Suspender
+              </button>
+
+              <button
+                class="btn btn-secondary"
+                type="button"
+                data-license-id="${escapeHtml(license.id)}"
+                data-next-status="revoked"
+              >
+                Revocar
+              </button>
+            </div>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadCompanies() {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus("Ingrese la clave ADM para cargar empresas.", "error");
+        return;
+      }
+
+      const response = await fetch(`${ADMIN_COMPANIES_URL}?limit=100`, {
+        method: "GET",
+        mode: "cors",
+        headers: {
+          "x-admin-key": adminKey
+        }
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message || "No se pudieron cargar las empresas.");
+      }
+
+      renderCompanies(result.companies || []);
+    }
+
+    async function loadLicenses() {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus("Ingrese la clave ADM para cargar licencias.", "error");
+        return;
+      }
+
+      setStatus("Cargando licencias...");
+
+      if (loadLicensesButton) loadLicensesButton.disabled = true;
+      if (refreshLicensesButton) refreshLicensesButton.disabled = true;
+
+      try {
+        await loadCompanies();
+
+        const response = await fetch(buildLicensesUrl(), {
+          method: "GET",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey
+          }
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudieron cargar las licencias.");
+        }
+
+        renderLicenses(result.licenses || []);
+        updateSummary(result.summary || {});
+
+        setStatus(
+          `Licencias cargadas: ${result.count || 0} de ${result.total || 0}`,
+          "success"
+        );
+      } catch (error) {
+        renderLicenses([]);
+        updateSummary({});
+        setStatus(error.message || "Error al cargar licencias.", "error");
+      } finally {
+        if (loadLicensesButton) loadLicensesButton.disabled = false;
+        if (refreshLicensesButton) refreshLicensesButton.disabled = false;
+      }
+    }
+
+    async function createLicense(event) {
+      event.preventDefault();
+
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus("Ingrese la clave ADM antes de crear licencias.", "error");
+        return;
+      }
+
+      const companyId = String(licenseCompanySelect?.value || "").trim();
+
+      if (!companyId) {
+        setStatus("Seleccione una empresa para la licencia.", "error");
+        return;
+      }
+
+      setStatus("Creando licencia...");
+
+      const payload = {
+        companyId,
+        productId: SMARTPOZO360_PRODUCT_ID,
+        licenseName: String(licenseNameInput?.value || "").trim(),
+        licenseId: String(licenseCodeInput?.value || "").trim(),
+        status: String(licenseStatusInput?.value || "active"),
+        startsAt: toIsoStartOfDay(String(licenseStartsAtInput?.value || "")),
+        expiresAt: toIsoEndOfDay(String(licenseExpiresAtInput?.value || "")),
+        maxUsers: Number(licenseMaxUsersInput?.value || 3),
+        maxDevices: Number(licenseMaxDevicesInput?.value || 1),
+        notes: String(licenseNotesInput?.value || "").trim()
+      };
+
+      try {
+        const response = await fetch(ADMIN_LICENSES_URL, {
+          method: "POST",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey,
+            "content-type": "text/plain;charset=UTF-8"
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudo crear la licencia.");
+        }
+
+        if (licenseNameInput) licenseNameInput.value = "";
+        if (licenseCodeInput) licenseCodeInput.value = "";
+        if (licenseNotesInput) licenseNotesInput.value = "";
+
+        setDefaultDates();
+        setStatus(result.message || "Licencia creada correctamente.", "success");
+        await loadLicenses();
+      } catch (error) {
+        setStatus(error.message || "Error al crear licencia.", "error");
+      }
+    }
+
+    async function updateLicenseStatus(licenseId, nextStatus, button) {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus("Ingrese la clave ADM antes de actualizar licencias.", "error");
+        return;
+      }
+
+      if (!licenseId || !nextStatus) {
+        setStatus("Licencia no válida.", "error");
+        return;
+      }
+
+      const note = window.prompt(
+        `Nota opcional para cambiar la licencia a ${getLicenseStatusLabel(nextStatus)}:`,
+        `Cambio de estado a ${getLicenseStatusLabel(nextStatus)} desde panel ADM.`
+      );
+
+      if (note === null) {
+        return;
+      }
+
+      setStatus("Actualizando licencia...");
+
+      if (button) {
+        button.disabled = true;
+      }
+
+      try {
+        const response = await fetch(ADMIN_LICENSE_STATUS_URL, {
+          method: "POST",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey,
+            "content-type": "text/plain;charset=UTF-8"
+          },
+          body: JSON.stringify({
+            id: licenseId,
+            status: nextStatus,
+            note
+          })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudo actualizar la licencia.");
+        }
+
+        setStatus(result.message || "Licencia actualizada correctamente.", "success");
+        await loadLicenses();
+      } catch (error) {
+        setStatus(error.message || "Error al actualizar licencia.", "error");
+      } finally {
+        if (button) {
+          button.disabled = false;
+        }
+      }
+    }
+
+    loadLicensesButton?.addEventListener("click", loadLicenses);
+    refreshLicensesButton?.addEventListener("click", loadLicenses);
+    createLicenseForm?.addEventListener("submit", createLicense);
+
+    licenseStatusFilter?.addEventListener("change", loadLicenses);
+    licenseCompanyFilter?.addEventListener("change", loadLicenses);
+
+    licenseSearchInput?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        loadLicenses();
+      }
+    });
+
+    clearLicenseFiltersButton?.addEventListener("click", () => {
+      if (licenseStatusFilter) licenseStatusFilter.value = "all";
+      if (licenseCompanyFilter) licenseCompanyFilter.value = "all";
+      if (licenseSearchInput) licenseSearchInput.value = "";
+      loadLicenses();
+    });
+
+    licensesTableBody?.addEventListener("click", async (event) => {
+      const target = event.target;
+
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      const button = target.closest("button[data-license-id]");
+
+      if (!button) {
+        return;
+      }
+
+      const licenseId = button.dataset.licenseId || "";
+      const nextStatus = button.dataset.nextStatus || "";
+
+      await updateLicenseStatus(licenseId, nextStatus, button);
+    });
+
+    setDefaultDates();
+  </script>
+</BaseLayout>
+
