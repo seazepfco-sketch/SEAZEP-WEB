@@ -148,7 +148,9 @@ if (url.pathname === "/user/manuals" && request.method === "GET") {
 
 
 
-
+  if (url.pathname === "/user/manuals/file" && request.method === "GET") {
+  return handleUserManualFile(request, env);
+}
 
 
     /*
@@ -3778,8 +3780,15 @@ async function handleUserListManuals(request, env) {
     }, 409);
   }
 
-  const now = new Date().toISOString();
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const expiresAt = new Date(now.getTime() + 1000 * 60 * 5).toISOString();
+
   const downloadId = crypto.randomUUID();
+  const fileTokenId = crypto.randomUUID();
+  const fileToken = createSessionToken();
+  const tokenHash = await sha256Hex(fileToken);
+
   const ipAddress = request.headers.get("cf-connecting-ip") || "";
   const userAgent = request.headers.get("user-agent") || "";
 
@@ -3806,8 +3815,40 @@ async function handleUserListManuals(request, env) {
       manual.file_url,
       ipAddress,
       userAgent,
-      now,
-      now
+      nowIso,
+      nowIso
+    )
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO manual_file_tokens (
+      id,
+      manual_id,
+      user_id,
+      company_id,
+      download_id,
+      token_hash,
+      status,
+      created_at,
+      expires_at,
+      used_at,
+      user_agent,
+      ip_address
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      fileTokenId,
+      manual.id,
+      user.id,
+      user.company_id || null,
+      downloadId,
+      tokenHash,
+      "active",
+      nowIso,
+      expiresAt,
+      null,
+      userAgent,
+      ipAddress
     )
     .run();
 
@@ -3825,7 +3866,7 @@ async function handleUserListManuals(request, env) {
     .bind(
       crypto.randomUUID(),
       user.id,
-      "user_manual_opened",
+      "user_manual_open_authorized",
       "manuals",
       manual.id,
       JSON.stringify({
@@ -3834,17 +3875,21 @@ async function handleUserListManuals(request, env) {
         companyId: user.company_id || "",
         companyName: user.linked_company_name || "",
         downloadId,
-        fileUrl: manual.file_url
+        fileTokenId,
+        expiresAt
       }),
-      now
+      nowIso
     )
     .run();
 
+  const openUrl = `${new URL(request.url).origin}/user/manuals/file?token=${encodeURIComponent(fileToken)}`;
+
   return corsResponse({
     ok: true,
-    message: "Acceso al manual autorizado.",
+    message: "Acceso temporal al manual autorizado.",
     downloadId,
-    openUrl: manual.file_url,
+    openUrl,
+    expiresAt,
     manual: {
       id: manual.id,
       title: manual.title,
@@ -3854,9 +3899,163 @@ async function handleUserListManuals(request, env) {
       visibility: manual.visibility || "",
       productId: manual.product_id || ""
     },
-    loggedAt: now
+    loggedAt: nowIso
   });
 }
+
+
+
+  async function handleUserManualFile(request, env) {
+  const url = new URL(request.url);
+  const token = String(url.searchParams.get("token") || "").trim();
+
+  if (!token) {
+    return new Response("Token requerido.", {
+      status: 400,
+      headers: {
+        ...corsHeaders(),
+        "content-type": "text/plain; charset=utf-8"
+      }
+    });
+  }
+
+  const tokenHash = await sha256Hex(token);
+  const nowIso = new Date().toISOString();
+
+  const record = await env.DB.prepare(`
+    SELECT
+      mft.id,
+      mft.manual_id,
+      mft.user_id,
+      mft.company_id,
+      mft.download_id,
+      mft.status,
+      mft.expires_at,
+      mft.used_at,
+      m.title,
+      m.file_url,
+      m.status AS manual_status
+    FROM manual_file_tokens mft
+    INNER JOIN manuals m ON m.id = mft.manual_id
+    WHERE mft.token_hash = ?
+    LIMIT 1
+  `)
+    .bind(tokenHash)
+    .first();
+
+  if (!record) {
+    return new Response("Token no válido.", {
+      status: 404,
+      headers: {
+        ...corsHeaders(),
+        "content-type": "text/plain; charset=utf-8"
+      }
+    });
+  }
+
+  if (record.status !== "active") {
+    return new Response("Token no activo.", {
+      status: 403,
+      headers: {
+        ...corsHeaders(),
+        "content-type": "text/plain; charset=utf-8"
+      }
+    });
+  }
+
+  if (record.manual_status !== "active") {
+    return new Response("Manual inactivo.", {
+      status: 403,
+      headers: {
+        ...corsHeaders(),
+        "content-type": "text/plain; charset=utf-8"
+      }
+    });
+  }
+
+  const expiresDate = new Date(record.expires_at);
+
+  if (Number.isNaN(expiresDate.getTime()) || expiresDate <= new Date()) {
+    await env.DB.prepare(`
+      UPDATE manual_file_tokens
+      SET status = 'expired'
+      WHERE id = ?
+    `)
+      .bind(record.id)
+      .run();
+
+    return new Response("Token expirado.", {
+      status: 403,
+      headers: {
+        ...corsHeaders(),
+        "content-type": "text/plain; charset=utf-8"
+      }
+    });
+  }
+
+  if (!record.file_url) {
+    return new Response("Archivo no configurado.", {
+      status: 409,
+      headers: {
+        ...corsHeaders(),
+        "content-type": "text/plain; charset=utf-8"
+      }
+    });
+  }
+
+  await env.DB.prepare(`
+    UPDATE manual_file_tokens
+    SET used_at = ?
+    WHERE id = ?
+      AND used_at IS NULL
+  `)
+    .bind(nowIso, record.id)
+    .run();
+
+  const frontendOrigin = String(env.FRONTEND_ORIGIN || "https://seazep-web.pages.dev").replace(/\/$/, "");
+  const fileUrl = String(record.file_url || "").trim();
+
+  const sourceUrl = fileUrl.startsWith("http://") || fileUrl.startsWith("https://")
+    ? fileUrl
+    : `${frontendOrigin}${fileUrl.startsWith("/") ? "" : "/"}${fileUrl}`;
+
+  const fileResponse = await fetch(sourceUrl);
+
+  if (!fileResponse.ok) {
+    return new Response("No se pudo obtener el archivo del manual.", {
+      status: 502,
+      headers: {
+        ...corsHeaders(),
+        "content-type": "text/plain; charset=utf-8"
+      }
+    });
+  }
+
+  const fileName = getSafeManualFileName(record.title || "manual-seazep");
+
+  return new Response(fileResponse.body, {
+    status: 200,
+    headers: {
+      ...corsHeaders(),
+      "content-type": fileResponse.headers.get("content-type") || "application/pdf",
+      "content-disposition": `inline; filename="${fileName}"`,
+      "cache-control": "no-store, no-cache, must-revalidate, max-age=0"
+    }
+  });
+}
+
+function getSafeManualFileName(value) {
+  const base = String(value || "manual-seazep")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase()
+    .slice(0, 80) || "manual-seazep";
+
+  return `${base}.pdf`;
+}
+
 
 
 

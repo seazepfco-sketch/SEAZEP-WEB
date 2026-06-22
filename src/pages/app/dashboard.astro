@@ -353,11 +353,8 @@ async function loadUserManuals() {
 
         setUserManualsStatus("Acceso autorizado. Abriendo manual...", "success");
 
-        const openedWindow = window.open(result.openUrl, "_blank", "noopener,noreferrer");
-
-        if (!openedWindow) {
-          window.location.href = result.openUrl;
-        }
+        window.open(result.openUrl, "_blank", "noopener,noreferrer");
+        
       } catch (error) {
         setUserManualsStatus(error.message || "Error al abrir manual.", "error");
       } finally {
@@ -511,6 +508,6 @@ if (dashboardLinkedCompanyStatus) {
     });
 
     renderDashboard();
-    
+
   </script>
 </BaseLayout>
