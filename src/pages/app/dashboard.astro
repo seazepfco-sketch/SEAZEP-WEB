@@ -30,10 +30,17 @@ import SectionTitle from "../../components/SectionTitle.astro";
 
       <div class="user-dashboard-grid">
         <article class="card">
-          <span class="eyebrow">Empresa</span>
-          <h3 id="dashboardCompanyName">Pendiente</h3>
-          <p>Empresa u organismo asociado al usuario registrado.</p>
-        </article>
+  <span class="eyebrow">Empresa asociada</span>
+  <h3 id="dashboardLinkedCompanyName">Sin empresa asociada</h3>
+  <p id="dashboardLinkedCompanyStatus">Estado de empresa: N/D</p>
+</article>
+
+<article class="card">
+  <span class="eyebrow">Empresa declarada</span>
+  <h3 id="dashboardCompanyName">Pendiente</h3>
+  <p>Empresa escrita por el usuario al registrarse.</p>
+</article>
+
 
         <article class="card">
           <span class="eyebrow">Teléfono</span>
@@ -100,6 +107,8 @@ import SectionTitle from "../../components/SectionTitle.astro";
     const dashboardUserName = document.getElementById("dashboardUserName");
     const dashboardUserEmail = document.getElementById("dashboardUserEmail");
     const dashboardCompanyName = document.getElementById("dashboardCompanyName");
+    const dashboardLinkedCompanyName = document.getElementById("dashboardLinkedCompanyName");
+    const dashboardLinkedCompanyStatus = document.getElementById("dashboardLinkedCompanyStatus");
     const dashboardPhone = document.getElementById("dashboardPhone");
     const dashboardRole = document.getElementById("dashboardRole");
     const dashboardStatus = document.getElementById("dashboardStatus");
@@ -111,6 +120,19 @@ import SectionTitle from "../../components/SectionTitle.astro";
       localStorage.removeItem("seazep_session_token");
       localStorage.removeItem("seazep_session_expires_at");
     }
+
+
+    function getCompanyStatusLabel(status) {
+  const labels = {
+    lead: "Prospecto",
+    active: "Activa",
+    suspended: "Suspendida",
+    archived: "Archivada"
+  };
+
+  return labels[status] || status || "N/D";
+}
+
 
     function formatSessionDate(value) {
       if (!value) return "N/D";
@@ -192,6 +214,16 @@ import SectionTitle from "../../components/SectionTitle.astro";
       if (dashboardCompanyName) {
         dashboardCompanyName.textContent = user.companyName || "Sin empresa";
       }
+
+
+      if (dashboardLinkedCompanyName) {
+  dashboardLinkedCompanyName.textContent = user.linkedCompanyName || "Sin empresa asociada";
+}
+
+if (dashboardLinkedCompanyStatus) {
+  dashboardLinkedCompanyStatus.textContent = `Estado de empresa: ${getCompanyStatusLabel(user.linkedCompanyStatus)}`;
+}
+
 
       if (dashboardPhone) {
         dashboardPhone.textContent = user.phone || "N/D";

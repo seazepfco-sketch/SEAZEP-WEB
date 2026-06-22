@@ -1261,23 +1261,27 @@ async function sha256Hex(value) {
   }
 
   const user = await env.DB.prepare(`
-    SELECT
-      id,
-      full_name,
-      email,
-      password_hash,
-      company_name,
-      phone,
-      role,
-      status,
-      source,
-      created_at
-    FROM users
-    WHERE lower(email) = lower(?)
-    LIMIT 1
-  `)
-    .bind(email)
-    .first();
+  SELECT
+    u.id,
+    u.full_name,
+    u.email,
+    u.password_hash,
+    u.company_name,
+    u.company_id,
+    u.phone,
+    u.role,
+    u.status,
+    c.name AS linked_company_name,
+    c.legal_name AS linked_company_legal_name,
+    c.status AS linked_company_status
+  FROM users u
+  LEFT JOIN companies c ON c.id = u.company_id
+  WHERE lower(u.email) = lower(?)
+  LIMIT 1
+`)
+  .bind(email)
+  .first();
+
 
   if (!user) {
     return corsResponse({
@@ -1370,14 +1374,19 @@ async function sha256Hex(value) {
     token: sessionToken,
     expiresAt,
     user: {
-      id: user.id,
-      fullName: user.full_name,
-      email: user.email,
-      companyName: user.company_name || "",
-      phone: user.phone || "",
-      role: user.role || "user",
-      status: user.status || "active"
-    }
+  id: user.id,
+  fullName: user.full_name,
+  email: user.email,
+  companyName: user.company_name,
+  companyId: user.company_id || "",
+  linkedCompanyName: user.linked_company_name || "",
+  linkedCompanyLegalName: user.linked_company_legal_name || "",
+  linkedCompanyStatus: user.linked_company_status || "",
+  phone: user.phone,
+  role: user.role,
+  status: user.status
+}
+
   });
 }
 
