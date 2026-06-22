@@ -1,0 +1,335 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import Header from "../../components/Header.astro";
+import Footer from "../../components/Footer.astro";
+import SectionTitle from "../../components/SectionTitle.astro";
+---
+
+<BaseLayout title="Descargas de manuales ADM | SEAZEP">
+  <Header active="admin" />
+
+  <main>
+    <section class="section">
+      <SectionTitle
+        eyebrow="ADM SEAZEP"
+        title="Historial de descargas de manuales."
+        text="Consulta qué usuarios abrieron manuales autorizados, desde qué empresa, en qué fecha y con qué archivo."
+      />
+
+      <div class="admin-access-panel">
+        <div>
+          <h3>Acceso temporal ADM</h3>
+          <p>
+            Ingrese la clave administrativa para consultar el historial de descargas de manuales.
+          </p>
+        </div>
+
+        <div class="admin-key-form">
+          <input
+            class="input"
+            id="adminApiKey"
+            type="password"
+            placeholder="Clave ADM temporal"
+            autocomplete="off"
+          />
+
+          <button class="btn btn-primary" id="loadDownloadsButton" type="button">
+            Cargar descargas
+          </button>
+
+          <a class="btn btn-ghost" href="/admin/manuales">
+            Manuales
+          </a>
+
+          <a class="btn btn-ghost" href="/admin/usuarios">
+            Usuarios
+          </a>
+
+          <a class="btn btn-ghost" href="/admin/empresas">
+            Empresas
+          </a>
+        </div>
+
+        <p id="adminDownloadsStatus" class="form-status" aria-live="polite"></p>
+      </div>
+
+      <section class="admin-filter-panel">
+        <div class="admin-filter-header">
+          <div>
+            <span class="eyebrow">Filtros ADM</span>
+            <h3>Seguimiento de aperturas y descargas</h3>
+          </div>
+
+          <button class="btn btn-secondary" type="button" id="clearDownloadFiltersButton">
+            Limpiar filtros
+          </button>
+        </div>
+
+        <div class="admin-filter-grid">
+          <label class="admin-filter-field admin-filter-search">
+            <span>Buscar</span>
+            <input
+              class="input"
+              id="downloadSearchInput"
+              placeholder="Manual, usuario, correo, empresa, archivo, IP o navegador"
+            />
+          </label>
+        </div>
+
+        <div class="admin-summary-grid downloads-summary-grid">
+          <article class="admin-summary-card">
+            <span>Total aperturas</span>
+            <strong id="summaryTotalDownloads">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Manuales únicos</span>
+            <strong id="summaryUniqueManuals">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Usuarios únicos</span>
+            <strong id="summaryUniqueUsers">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Empresas únicas</span>
+            <strong id="summaryUniqueCompanies">0</strong>
+          </article>
+        </div>
+      </section>
+
+      <section class="admin-requests-section">
+        <div class="admin-section-header">
+          <div>
+            <span class="eyebrow">Registros</span>
+            <h2>Historial reciente.</h2>
+          </div>
+
+          <button class="btn btn-ghost" id="refreshDownloadsButton" type="button">
+            Actualizar
+          </button>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Manual</th>
+                <th>Usuario</th>
+                <th>Empresa</th>
+                <th>Archivo</th>
+                <th>IP / Navegador</th>
+              </tr>
+            </thead>
+
+            <tbody id="downloadsTableBody">
+              <tr>
+                <td colspan="6" class="admin-empty">
+                  Ingrese la clave ADM y presione “Cargar descargas”.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <Footer />
+
+  <script>
+    const ADMIN_MANUAL_DOWNLOADS_URL = "https://seazep-api.seazepfco.workers.dev/admin/manual-downloads";
+
+    const adminKeyInput = document.getElementById("adminApiKey");
+    const loadDownloadsButton = document.getElementById("loadDownloadsButton");
+    const refreshDownloadsButton = document.getElementById("refreshDownloadsButton");
+    const clearDownloadFiltersButton = document.getElementById("clearDownloadFiltersButton");
+    const downloadSearchInput = document.getElementById("downloadSearchInput");
+    const downloadsTableBody = document.getElementById("downloadsTableBody");
+    const statusEl = document.getElementById("adminDownloadsStatus");
+
+    const summaryTotalDownloads = document.getElementById("summaryTotalDownloads");
+    const summaryUniqueManuals = document.getElementById("summaryUniqueManuals");
+    const summaryUniqueUsers = document.getElementById("summaryUniqueUsers");
+    const summaryUniqueCompanies = document.getElementById("summaryUniqueCompanies");
+
+    function getAdminKey() {
+      return String(adminKeyInput?.value || "").trim();
+    }
+
+    function setStatus(message, type = "") {
+      if (!statusEl) return;
+      statusEl.textContent = message;
+      statusEl.className = type ? `form-status ${type}` : "form-status";
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function formatDate(value) {
+      if (!value) return "N/D";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) {
+        return value;
+      }
+
+      return date.toLocaleString("es-MX", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function buildDownloadsUrl() {
+      const params = new URLSearchParams();
+      params.set("limit", "50");
+
+      const search = String(downloadSearchInput?.value || "").trim();
+
+      if (search) {
+        params.set("search", search);
+      }
+
+      return `${ADMIN_MANUAL_DOWNLOADS_URL}?${params.toString()}`;
+    }
+
+    function updateSummary(summary = {}) {
+      if (summaryTotalDownloads) {
+        summaryTotalDownloads.textContent = String(summary.totalDownloads || 0);
+      }
+
+      if (summaryUniqueManuals) {
+        summaryUniqueManuals.textContent = String(summary.uniqueManuals || 0);
+      }
+
+      if (summaryUniqueUsers) {
+        summaryUniqueUsers.textContent = String(summary.uniqueUsers || 0);
+      }
+
+      if (summaryUniqueCompanies) {
+        summaryUniqueCompanies.textContent = String(summary.uniqueCompanies || 0);
+      }
+    }
+
+    function renderDownloads(downloads = []) {
+      if (!downloadsTableBody) return;
+
+      if (!downloads.length) {
+        downloadsTableBody.innerHTML = `
+          <tr>
+            <td colspan="6" class="admin-empty">
+              No hay descargas registradas con esos filtros.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      downloadsTableBody.innerHTML = downloads.map((item) => `
+        <tr>
+          <td>
+            <strong>${escapeHtml(formatDate(item.downloaded_at || item.created_at))}</strong>
+            <small>ID: ${escapeHtml(String(item.id || "").slice(0, 8))}...</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(item.manual_title || "Manual no encontrado")}</strong>
+            <small>Categoría: ${escapeHtml(item.manual_category || "N/D")}</small>
+            <small>Versión: ${escapeHtml(item.manual_version || "N/D")}</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(item.user_full_name || "Usuario no encontrado")}</strong>
+            <small>${escapeHtml(item.user_email || "Sin correo")}</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(item.company_name || "Empresa no encontrada")}</strong>
+            <small>Estado: ${escapeHtml(item.company_status || "N/D")}</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(item.file_url || "Sin archivo")}</strong>
+          </td>
+
+          <td>
+            <strong>IP: ${escapeHtml(item.ip_address || "N/D")}</strong>
+            <small>${escapeHtml(item.user_agent || "Sin navegador")}</small>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadDownloads() {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus("Ingrese la clave ADM para cargar descargas.", "error");
+        return;
+      }
+
+      setStatus("Cargando historial de descargas...");
+
+      if (loadDownloadsButton) loadDownloadsButton.disabled = true;
+      if (refreshDownloadsButton) refreshDownloadsButton.disabled = true;
+
+      try {
+        const response = await fetch(buildDownloadsUrl(), {
+          method: "GET",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey
+          }
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudo cargar el historial.");
+        }
+
+        renderDownloads(result.downloads || []);
+        updateSummary(result.summary || {});
+
+        setStatus(
+          `Descargas cargadas: ${result.count || 0} de ${result.total || 0}`,
+          "success"
+        );
+      } catch (error) {
+        renderDownloads([]);
+        updateSummary({});
+        setStatus(error.message || "Error al cargar descargas.", "error");
+      } finally {
+        if (loadDownloadsButton) loadDownloadsButton.disabled = false;
+        if (refreshDownloadsButton) refreshDownloadsButton.disabled = false;
+      }
+    }
+
+    loadDownloadsButton?.addEventListener("click", loadDownloads);
+    refreshDownloadsButton?.addEventListener("click", loadDownloads);
+
+    downloadSearchInput?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        loadDownloads();
+      }
+    });
+
+    clearDownloadFiltersButton?.addEventListener("click", () => {
+      if (downloadSearchInput) downloadSearchInput.value = "";
+      loadDownloads();
+    });
+  </script>
+</BaseLayout>
+

@@ -131,6 +131,10 @@ if (url.pathname === "/admin/manuals/assign-company" && request.method === "POST
   return handleAdminAssignManualCompany(request, env);
 }
 
+  if (url.pathname === "/admin/manual-downloads" && request.method === "GET") {
+  return handleAdminListManualDownloads(request, env);
+}
+
 if (url.pathname === "/user/manuals" && request.method === "GET") {
   return handleUserListManuals(request, env);
 }
@@ -3852,6 +3856,146 @@ async function handleUserListManuals(request, env) {
   });
 }
 
+
+  async function handleAdminListManualDownloads(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  const url = new URL(request.url);
+
+  const search = cleanText(url.searchParams.get("search") || "", 120);
+  const companyId = cleanText(url.searchParams.get("companyId") || "", 80);
+  const manualId = cleanText(url.searchParams.get("manualId") || "", 80);
+
+  const rawLimit = Number(url.searchParams.get("limit") || 50);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(Math.trunc(rawLimit), 1), 100)
+    : 50;
+
+  const whereParts = [];
+  const params = [];
+
+  if (companyId && companyId !== "all") {
+    whereParts.push("md.company_id = ?");
+    params.push(companyId);
+  }
+
+  if (manualId && manualId !== "all") {
+    whereParts.push("md.manual_id = ?");
+    params.push(manualId);
+  }
+
+  if (search) {
+    const likeSearch = `%${search}%`;
+
+    whereParts.push(`(
+      m.title LIKE ?
+      OR u.email LIKE ?
+      OR u.full_name LIKE ?
+      OR c.name LIKE ?
+      OR md.file_url LIKE ?
+      OR md.ip_address LIKE ?
+      OR md.user_agent LIKE ?
+    )`);
+
+    params.push(
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch
+    );
+  }
+
+  const whereSql = whereParts.length
+    ? `WHERE ${whereParts.join(" AND ")}`
+    : "";
+
+  const listSql = `
+    SELECT
+      md.id,
+      md.manual_id,
+      m.title AS manual_title,
+      m.category AS manual_category,
+      m.version AS manual_version,
+      md.user_id,
+      u.full_name AS user_full_name,
+      u.email AS user_email,
+      md.company_id,
+      c.name AS company_name,
+      c.status AS company_status,
+      md.session_id,
+      md.file_url,
+      md.ip_address,
+      md.user_agent,
+      md.downloaded_at,
+      md.created_at
+    FROM manual_downloads md
+    LEFT JOIN manuals m ON m.id = md.manual_id
+    LEFT JOIN users u ON u.id = md.user_id
+    LEFT JOIN companies c ON c.id = md.company_id
+    ${whereSql}
+    ORDER BY COALESCE(md.downloaded_at, md.created_at) DESC
+    LIMIT ${limit}
+  `;
+
+  const countSql = `
+    SELECT COUNT(*) AS total
+    FROM manual_downloads md
+    LEFT JOIN manuals m ON m.id = md.manual_id
+    LEFT JOIN users u ON u.id = md.user_id
+    LEFT JOIN companies c ON c.id = md.company_id
+    ${whereSql}
+  `;
+
+  const listStatement = env.DB.prepare(listSql);
+  const countStatement = env.DB.prepare(countSql);
+
+  const listResult = params.length
+    ? await listStatement.bind(...params).all()
+    : await listStatement.all();
+
+  const countResult = params.length
+    ? await countStatement.bind(...params).first()
+    : await countStatement.first();
+
+  const summaryResult = await env.DB.prepare(`
+    SELECT
+      COUNT(*) AS total_downloads,
+      COUNT(DISTINCT manual_id) AS unique_manuals,
+      COUNT(DISTINCT user_id) AS unique_users,
+      COUNT(DISTINCT company_id) AS unique_companies
+    FROM manual_downloads
+  `).first();
+
+  return corsResponse({
+    ok: true,
+    count: (listResult.results || []).length,
+    total: Number(countResult?.total || 0),
+    limit,
+    filters: {
+      search,
+      companyId: companyId || "all",
+      manualId: manualId || "all"
+    },
+    summary: {
+      totalDownloads: Number(summaryResult?.total_downloads || 0),
+      uniqueManuals: Number(summaryResult?.unique_manuals || 0),
+      uniqueUsers: Number(summaryResult?.unique_users || 0),
+      uniqueCompanies: Number(summaryResult?.unique_companies || 0)
+    },
+    downloads: listResult.results || []
+  });
+}
 
 
 
