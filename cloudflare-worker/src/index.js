@@ -153,9 +153,13 @@ if (url.pathname === "/admin/licenses/update-status" && request.method === "POST
   return handleAdminListLicenseActivations(request, env);
 }
 
-  if (url.pathname === "/admin/license-activations" && request.method === "GET") {
-  return handleAdminListLicenseActivations(request, env);
+
+if (url.pathname === "/admin/license-activations/update-status" && request.method === "POST") {
+  return handleAdminUpdateLicenseActivationStatus(request, env);
 }
+
+
+  
 
   
 if (url.pathname === "/user/manuals" && request.method === "GET") {
@@ -4959,6 +4963,172 @@ function parsePositiveInteger(value, fallback) {
 }
 
 
+
+
+  async function handleAdminUpdateLicenseActivationStatus(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const activationId = cleanText(body.activationId || body.id, 80);
+  const status = cleanText(body.status, 40);
+  const note = cleanText(body.note || "", 800);
+
+  const allowedStatuses = [
+    "active",
+    "suspended",
+    "revoked"
+  ];
+
+  if (!activationId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_ACTIVATION_ID",
+      message: "Falta el ID de la activación."
+    }, 400);
+  }
+
+  if (!allowedStatuses.includes(status)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_STATUS",
+      message: "Estado de activación no permitido."
+    }, 400);
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT
+      la.id,
+      la.license_id AS license_db_id,
+      l.license_id AS license_code,
+      l.license_name,
+      la.product_id,
+      sp.name AS product_name,
+      la.company_id,
+      c.name AS company_name,
+      la.machine_id,
+      la.device_label,
+      la.app_version,
+      la.status,
+      la.activated_at,
+      la.last_check_at
+    FROM license_activations la
+    LEFT JOIN licenses l ON l.id = la.license_id
+    LEFT JOIN software_products sp ON sp.id = la.product_id
+    LEFT JOIN companies c ON c.id = la.company_id
+    WHERE la.id = ?
+    LIMIT 1
+  `)
+    .bind(activationId)
+    .first();
+
+  if (!existing) {
+    return corsResponse({
+      ok: false,
+      code: "ACTIVATION_NOT_FOUND",
+      message: "No se encontró la activación."
+    }, 404);
+  }
+
+  const previousStatus = existing.status || "active";
+  const now = new Date().toISOString();
+
+  await env.DB.prepare(`
+    UPDATE license_activations
+    SET
+      status = ?,
+      last_check_at = ?
+    WHERE id = ?
+  `)
+    .bind(status, now, activationId)
+    .run();
+
+  await recordLicenseCheck(env, {
+    licenseId: existing.license_code || existing.license_db_id,
+    companyId: existing.company_id || null,
+    productId: existing.product_id || null,
+    machineId: existing.machine_id || "",
+    checkType: "admin_activation_status_update",
+    result: status,
+    ipAddress: request.headers.get("cf-connecting-ip") || "",
+    userAgent: cleanText(request.headers.get("user-agent") || "", 500)
+  });
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      "temporary-admin",
+      "admin_license_activation_status_updated",
+      "license_activations",
+      activationId,
+      JSON.stringify({
+        activationId,
+        licenseDbId: existing.license_db_id || "",
+        licenseCode: existing.license_code || "",
+        licenseName: existing.license_name || "",
+        productId: existing.product_id || "",
+        productName: existing.product_name || "",
+        companyId: existing.company_id || "",
+        companyName: existing.company_name || "",
+        machineId: existing.machine_id || "",
+        deviceLabel: existing.device_label || "",
+        appVersion: existing.app_version || "",
+        previousStatus,
+        newStatus: status,
+        note
+      }),
+      now
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    id: activationId,
+    previousStatus,
+    status,
+    message: "Estado de activación actualizado correctamente.",
+    updatedAt: now,
+    activation: {
+      id: activationId,
+      licenseCode: existing.license_code || "",
+      machineId: existing.machine_id || "",
+      deviceLabel: existing.device_label || "",
+      previousStatus,
+      status
+    }
+  });
+}
+
+
+
   
   async function handleLicenseCheck(request, env) {
   let body;
@@ -5152,7 +5322,8 @@ function parsePositiveInteger(value, fallback) {
       .run();
   }
 
-  if (machineId) {
+  
+    if (machineId) {
     activation = await env.DB.prepare(`
       SELECT
         id,
@@ -5199,9 +5370,23 @@ function parsePositiveInteger(value, fallback) {
       result = "valid";
       code = "LICENSE_VALID_ACTIVATED_DEVICE";
       message = "Licencia válida para este equipo.";
-    }
+    } else if (valid && activation && activation.status !== "active") {
+      const activationStatus = activation.status || "inactive";
 
-    if (valid && (!activation || activation.status !== "active")) {
+      valid = false;
+      requiresActivation = false;
+      canActivate = false;
+      result = `device_${activationStatus}`;
+
+      const deviceStatusCodes = {
+        suspended: "DEVICE_SUSPENDED",
+        revoked: "DEVICE_REVOKED",
+        expired: "DEVICE_EXPIRED"
+      };
+
+      code = deviceStatusCodes[activationStatus] || "DEVICE_NOT_ACTIVE";
+      message = `Este equipo está en estado ${activationStatus}.`;
+    } else if (valid && !activation) {
       requiresActivation = true;
 
       if (activeActivations >= Number(license.max_devices || 1)) {
@@ -5219,6 +5404,8 @@ function parsePositiveInteger(value, fallback) {
       }
     }
   }
+
+
 
   await recordLicenseCheck(env, {
     licenseId: license.license_id,
@@ -5638,6 +5825,54 @@ async function recordLicenseCheck(env, data) {
       }
     });
   }
+
+
+      if (existingActivation && existingActivation.status !== "active") {
+    const activationStatus = existingActivation.status || "inactive";
+
+    const deviceStatusCodes = {
+      suspended: "DEVICE_SUSPENDED",
+      revoked: "DEVICE_REVOKED",
+      expired: "DEVICE_EXPIRED"
+    };
+
+    const responseCode = deviceStatusCodes[activationStatus] || "DEVICE_NOT_ACTIVE";
+
+    await recordLicenseCheck(env, {
+      licenseId: license.license_id,
+      companyId: license.company_id || null,
+      productId: license.product_id || null,
+      machineId,
+      checkType: "activation_register",
+      result: `device_${activationStatus}`,
+      ipAddress,
+      userAgent
+    });
+
+    return corsResponse({
+      ok: true,
+      activated: false,
+      code: responseCode,
+      message: `Este equipo está en estado ${activationStatus}.`,
+      checkedAt: nowIso,
+      activation: {
+        id: existingActivation.id,
+        machineId,
+        status: activationStatus,
+        activatedAt: existingActivation.activated_at,
+        lastCheckAt: existingActivation.last_check_at
+      },
+      license: {
+        licenseId: license.license_id,
+        licenseName: license.license_name || "",
+        status: license.status,
+        expiresAt: license.expires_at || "",
+        maxDevices: Number(license.max_devices || 1)
+      }
+    }, 403);
+  }
+
+  
 
   const activationsCount = await env.DB.prepare(`
     SELECT COUNT(*) AS total
