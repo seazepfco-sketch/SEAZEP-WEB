@@ -261,6 +261,72 @@ import SectionTitle from "../../components/SectionTitle.astro";
       </section>
 
 
+         <section class="admin-requests-section company-license-report-section">
+        <div class="admin-section-header">
+          <div>
+            <span class="eyebrow">Reporte ejecutivo</span>
+            <h2>Licencias por empresa.</h2>
+            <p>
+              Vista consolidada para seguimiento comercial y técnico por cliente.
+            </p>
+          </div>
+
+          <button class="btn btn-ghost" id="refreshCompanyReportButton" type="button">
+            Actualizar reporte
+          </button>
+        </div>
+
+        <div class="admin-filter-panel">
+          <div class="admin-filter-grid">
+            <label class="admin-filter-field">
+              <span>Nivel de riesgo</span>
+              <select class="input" id="companyRiskFilter">
+                <option value="all">Todos</option>
+                <option value="critical">Crítico</option>
+                <option value="warning">Atención</option>
+                <option value="ok">Correcto</option>
+              </select>
+            </label>
+
+            <label class="admin-filter-field admin-filter-search">
+              <span>Buscar empresa</span>
+              <input
+                class="input"
+                id="companyReportSearchInput"
+                placeholder="Empresa, licencia, software o estado"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Empresa</th>
+                <th>Licencias</th>
+                <th>Equipos</th>
+                <th>Último check</th>
+                <th>Riesgo</th>
+                <th>Resumen ejecutivo</th>
+              </tr>
+            </thead>
+
+            <tbody id="companyReportTableBody">
+              <tr>
+                <td colspan="6" class="admin-empty">
+                  Cargue las licencias para ver el reporte ejecutivo por empresa.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p id="companyReportStatus" class="form-status" aria-live="polite"></p>
+      </section>
+
+
+
       <section class="admin-requests-section">
         <div class="admin-section-header">
           <div>
@@ -579,6 +645,13 @@ import SectionTitle from "../../components/SectionTitle.astro";
     const summarySuspendedLicenses = document.getElementById("summarySuspendedLicenses");
     const summaryExpiredLicenses = document.getElementById("summaryExpiredLicenses");
     const summaryRevokedLicenses = document.getElementById("summaryRevokedLicenses");
+
+     const companyReportTableBody = document.getElementById("companyReportTableBody");
+    const refreshCompanyReportButton = document.getElementById("refreshCompanyReportButton");
+    const companyRiskFilter = document.getElementById("companyRiskFilter");
+    const companyReportSearchInput = document.getElementById("companyReportSearchInput");
+    const companyReportStatus = document.getElementById("companyReportStatus");
+
 
     function getAdminKey() {
       return String(adminKeyInput?.value || "").trim();
@@ -1526,6 +1599,345 @@ import SectionTitle from "../../components/SectionTitle.astro";
 
 
 
+     function setCompanyReportStatus(message, type = "") {
+      if (!companyReportStatus) return;
+
+      companyReportStatus.textContent = message;
+      companyReportStatus.className = type ? `form-status ${type}` : "form-status";
+    }
+
+    function getCompanyReportRisk(company = {}) {
+      if (company.expiredLicenses > 0 || company.revokedDevices > 0) {
+        return {
+          level: "critical",
+          label: "Crítico",
+          text: "Tiene licencias vencidas o equipos revocados."
+        };
+      }
+
+      if (
+        company.suspendedLicenses > 0 ||
+        company.suspendedDevices > 0 ||
+        company.limitBlocks > 0
+      ) {
+        return {
+          level: "warning",
+          label: "Atención",
+          text: "Requiere revisión por suspensión, bloqueo o límite de dispositivos."
+        };
+      }
+
+      return {
+        level: "ok",
+        label: "Correcto",
+        text: "Operación comercial y técnica sin alertas principales."
+      };
+    }
+
+    function getLatestDateValue(values = []) {
+      const validDates = values
+        .filter(Boolean)
+        .map((value) => new Date(value))
+        .filter((date) => !Number.isNaN(date.getTime()))
+        .sort((a, b) => b.getTime() - a.getTime());
+
+      return validDates[0] ? validDates[0].toISOString() : "";
+    }
+
+    function normalizeCompanyReportText(value) {
+      return String(value || "").toLowerCase();
+    }
+
+    function renderCompanyReport(companies = []) {
+      if (!companyReportTableBody) return;
+
+      const riskFilter = String(companyRiskFilter?.value || "all");
+      const search = normalizeCompanyReportText(companyReportSearchInput?.value || "");
+
+      const filteredCompanies = companies.filter((company) => {
+        const risk = getCompanyReportRisk(company);
+
+        if (riskFilter !== "all" && risk.level !== riskFilter) {
+          return false;
+        }
+
+        if (!search) {
+          return true;
+        }
+
+        const haystack = [
+          company.companyName,
+          company.companyStatus,
+          company.licenseCodes.join(" "),
+          company.productNames.join(" "),
+          risk.label,
+          risk.text
+        ].join(" ").toLowerCase();
+
+        return haystack.includes(search);
+      });
+
+      if (!filteredCompanies.length) {
+        companyReportTableBody.innerHTML = `
+          <tr>
+            <td colspan="6" class="admin-empty">
+              No hay empresas con esos filtros.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      companyReportTableBody.innerHTML = filteredCompanies.map((company) => {
+        const risk = getCompanyReportRisk(company);
+
+        return `
+          <tr>
+            <td>
+              <strong>${escapeHtml(company.companyName || "Empresa no encontrada")}</strong>
+              <small>Estado: ${escapeHtml(company.companyStatus || "N/D")}</small>
+              <small>ID: ${escapeHtml(String(company.companyId || "").slice(0, 12))}</small>
+            </td>
+
+            <td>
+              <strong>Total: ${escapeHtml(company.totalLicenses)}</strong>
+              <small>Activas: ${escapeHtml(company.activeLicenses)}</small>
+              <small>Suspendidas: ${escapeHtml(company.suspendedLicenses)}</small>
+              <small>Vencidas: ${escapeHtml(company.expiredLicenses)}</small>
+              <small>Revocadas: ${escapeHtml(company.revokedLicenses)}</small>
+            </td>
+
+            <td>
+              <strong>Activos: ${escapeHtml(company.activeDevices)}</strong>
+              <small>Suspendidos: ${escapeHtml(company.suspendedDevices)}</small>
+              <small>Revocados: ${escapeHtml(company.revokedDevices)}</small>
+              <small>Bloqueos por límite: ${escapeHtml(company.limitBlocks)}</small>
+            </td>
+
+            <td>
+              <strong>${escapeHtml(formatDateTime(company.latestCheckAt))}</strong>
+              <small>${escapeHtml(company.latestCheckResult || "Sin resultado")}</small>
+            </td>
+
+            <td>
+              <span class="admin-status-pill company-risk-${escapeHtml(risk.level)}">
+                ${escapeHtml(risk.label)}
+              </span>
+              <small>${escapeHtml(risk.text)}</small>
+            </td>
+
+            <td class="admin-message-cell">
+              ${escapeHtml(company.executiveSummary)}
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function buildCompanyReportData(licenses = [], activations = [], checks = []) {
+      const map = new Map();
+
+      function ensureCompany(companyId, fallback = {}) {
+        const key = companyId || "sin_empresa";
+
+        if (!map.has(key)) {
+          map.set(key, {
+            companyId: companyId || "",
+            companyName: fallback.companyName || "Empresa no encontrada",
+            companyStatus: fallback.companyStatus || "N/D",
+            totalLicenses: 0,
+            activeLicenses: 0,
+            suspendedLicenses: 0,
+            expiredLicenses: 0,
+            revokedLicenses: 0,
+            activeDevices: 0,
+            suspendedDevices: 0,
+            revokedDevices: 0,
+            limitBlocks: 0,
+            licenseCodes: [],
+            productNames: [],
+            checkDates: [],
+            latestCheckAt: "",
+            latestCheckResult: "",
+            executiveSummary: ""
+          });
+        }
+
+        return map.get(key);
+      }
+
+      for (const license of licenses) {
+        const company = ensureCompany(license.company_id || "", {
+          companyName: license.company_name || "Empresa no encontrada",
+          companyStatus: license.company_status || "N/D"
+        });
+
+        company.totalLicenses += 1;
+
+        if (license.status === "active") company.activeLicenses += 1;
+        if (license.status === "suspended") company.suspendedLicenses += 1;
+        if (license.status === "expired") company.expiredLicenses += 1;
+        if (license.status === "revoked") company.revokedLicenses += 1;
+
+        if (license.license_id) company.licenseCodes.push(license.license_id);
+        if (license.product_name) company.productNames.push(license.product_name);
+      }
+
+      for (const activation of activations) {
+        const company = ensureCompany(activation.company_id || "", {
+          companyName: activation.company_name || "Empresa no encontrada",
+          companyStatus: activation.company_status || "N/D"
+        });
+
+        if (activation.status === "active") company.activeDevices += 1;
+        if (activation.status === "suspended") company.suspendedDevices += 1;
+        if (activation.status === "revoked") company.revokedDevices += 1;
+
+        if (activation.license_code) company.licenseCodes.push(activation.license_code);
+        if (activation.product_name) company.productNames.push(activation.product_name);
+
+        if (activation.last_check_at) {
+          company.checkDates.push(activation.last_check_at);
+        }
+      }
+
+      for (const check of checks) {
+        const company = ensureCompany(check.company_id || "", {
+          companyName: check.company_name || "Empresa no encontrada",
+          companyStatus: check.company_status || "N/D"
+        });
+
+        if (check.result === "device_limit_reached") {
+          company.limitBlocks += 1;
+        }
+
+        if (check.license_id) company.licenseCodes.push(check.license_id);
+        if (check.product_name) company.productNames.push(check.product_name);
+
+        if (check.checked_at) {
+          company.checkDates.push(check.checked_at);
+
+          const currentLatest = company.latestCheckAt
+            ? new Date(company.latestCheckAt).getTime()
+            : 0;
+
+          const candidateLatest = new Date(check.checked_at).getTime();
+
+          if (!Number.isNaN(candidateLatest) && candidateLatest >= currentLatest) {
+            company.latestCheckAt = check.checked_at;
+            company.latestCheckResult = getCheckResultLabel(check.result);
+          }
+        }
+      }
+
+      const companies = Array.from(map.values()).map((company) => {
+        company.licenseCodes = Array.from(new Set(company.licenseCodes.filter(Boolean)));
+        company.productNames = Array.from(new Set(company.productNames.filter(Boolean)));
+
+        if (!company.latestCheckAt) {
+          company.latestCheckAt = getLatestDateValue(company.checkDates);
+        }
+
+        const risk = getCompanyReportRisk(company);
+
+        company.executiveSummary = [
+          `${company.companyName}: ${company.totalLicenses} licencia(s), ${company.activeDevices} equipo(s) activo(s).`,
+          risk.text
+        ].join(" ");
+
+        return company;
+      });
+
+      return companies.sort((a, b) => {
+        const riskOrder = {
+          critical: 0,
+          warning: 1,
+          ok: 2
+        };
+
+        const riskA = getCompanyReportRisk(a).level;
+        const riskB = getCompanyReportRisk(b).level;
+
+        return (riskOrder[riskA] ?? 9) - (riskOrder[riskB] ?? 9);
+      });
+    }
+
+    async function loadCompanyLicenseReport() {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setCompanyReportStatus("Ingrese la clave ADM para cargar reporte por empresa.", "error");
+        return;
+      }
+
+      if (refreshCompanyReportButton) {
+        refreshCompanyReportButton.disabled = true;
+      }
+
+      try {
+        setCompanyReportStatus("Cargando reporte ejecutivo por empresa...");
+
+        const [licensesResponse, activationsResponse, checksResponse] = await Promise.all([
+          fetch(`${ADMIN_LICENSES_URL}?limit=100`, {
+            method: "GET",
+            mode: "cors",
+            headers: {
+              "x-admin-key": adminKey
+            }
+          }),
+          fetch(`${ADMIN_LICENSE_ACTIVATIONS_URL}?limit=100`, {
+            method: "GET",
+            mode: "cors",
+            headers: {
+              "x-admin-key": adminKey
+            }
+          }),
+          fetch(`${ADMIN_LICENSE_CHECKS_URL}?limit=100`, {
+            method: "GET",
+            mode: "cors",
+            headers: {
+              "x-admin-key": adminKey
+            }
+          })
+        ]);
+
+        const licensesResult = await licensesResponse.json();
+        const activationsResult = await activationsResponse.json();
+        const checksResult = await checksResponse.json();
+
+        if (!licensesResponse.ok || !licensesResult.ok) {
+          throw new Error(licensesResult.message || "No se pudieron cargar licencias para el reporte.");
+        }
+
+        if (!activationsResponse.ok || !activationsResult.ok) {
+          throw new Error(activationsResult.message || "No se pudieron cargar activaciones para el reporte.");
+        }
+
+        if (!checksResponse.ok || !checksResult.ok) {
+          throw new Error(checksResult.message || "No se pudo cargar historial para el reporte.");
+        }
+
+        const companies = buildCompanyReportData(
+          licensesResult.licenses || [],
+          activationsResult.activations || [],
+          checksResult.checks || []
+        );
+
+        renderCompanyReport(companies);
+
+        setCompanyReportStatus(
+          `Reporte ejecutivo cargado: ${companies.length} empresa(s).`,
+          "success"
+        );
+      } catch (error) {
+        renderCompanyReport([]);
+        setCompanyReportStatus(error.message || "Error al cargar reporte por empresa.", "error");
+      } finally {
+        if (refreshCompanyReportButton) {
+          refreshCompanyReportButton.disabled = false;
+        }
+      }
+    }
 
 
     function renderLicenses(licenses = []) {
@@ -1708,6 +2120,8 @@ import SectionTitle from "../../components/SectionTitle.astro";
         await loadLicenseChecks();
 
         await loadLicenseAudit();
+
+        await loadCompanyLicenseReport();
 
 
         setStatus(
@@ -2092,7 +2506,18 @@ import SectionTitle from "../../components/SectionTitle.astro";
         loadLicenseAudit();
       }
     });
-    
+
+
+
+    refreshCompanyReportButton?.addEventListener("click", loadCompanyLicenseReport);
+    companyRiskFilter?.addEventListener("change", loadCompanyLicenseReport);
+
+    companyReportSearchInput?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        loadCompanyLicenseReport();
+      }
+    });
+
 
 
 

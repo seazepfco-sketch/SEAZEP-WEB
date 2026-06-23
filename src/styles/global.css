@@ -1884,3 +1884,36 @@ sers\azada\Documents\PROYECTOS_SOFTWARE\SEAZEP\SEAZEP-WEB\src\styles\global.css
   color: #bae6fd;
   border-color: rgba(14, 165, 233, 0.28);
 }
+
+
+
+.company-license-report-section {
+  margin-top: 28px;
+  margin-bottom: 28px;
+}
+
+.company-license-report-section .admin-message-cell {
+  max-width: 420px;
+  white-space: normal;
+  line-height: 1.5;
+}
+
+.company-risk-critical {
+  background: rgba(239, 68, 68, 0.14);
+  color: #fecaca;
+  border-color: rgba(239, 68, 68, 0.28);
+}
+
+.company-risk-warning {
+  background: rgba(245, 158, 11, 0.14);
+  color: #fde68a;
+  border-color: rgba(245, 158, 11, 0.28);
+}
+
+.company-risk-ok {
+  background: rgba(34, 197, 94, 0.14);
+  color: #bbf7d0;
+  border-color: rgba(34, 197, 94, 0.28);
+}
+
+
