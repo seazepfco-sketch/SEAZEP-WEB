@@ -444,6 +444,75 @@ import SectionTitle from "../../components/SectionTitle.astro";
         </div>
       </section>
 
+
+        <section class="admin-requests-section license-audit-section">
+        <div class="admin-section-header">
+          <div>
+            <span class="eyebrow">Auditoría ADM</span>
+            <h2>Historial de cambios de licencias.</h2>
+            <p>
+              Consulte movimientos administrativos sobre licencias, renovaciones, límites, estados y activaciones de equipos.
+            </p>
+          </div>
+
+          <button class="btn btn-ghost" id="refreshAuditButton" type="button">
+            Actualizar auditoría
+          </button>
+        </div>
+
+        <div class="admin-filter-panel">
+          <div class="admin-filter-grid">
+            <label class="admin-filter-field">
+              <span>Acción</span>
+              <select class="input" id="auditActionFilter">
+                <option value="all">Todas</option>
+                <option value="admin_license_created">Licencia creada</option>
+                <option value="admin_license_status_updated">Cambio de estado de licencia</option>
+                <option value="admin_license_commercial_updated">Cambio comercial / renovación</option>
+                <option value="admin_license_activation_status_updated">Cambio de estado de equipo</option>
+                <option value="license_device_activated">Equipo activado</option>
+              </select>
+            </label>
+
+            <label class="admin-filter-field admin-filter-search">
+              <span>Buscar auditoría</span>
+              <input
+                class="input"
+                id="auditSearchInput"
+                placeholder="Licencia, empresa, equipo, acción o dato comercial"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Acción</th>
+                <th>Entidad</th>
+                <th>Licencia / Empresa</th>
+                <th>Detalle del cambio</th>
+                <th>Actor</th>
+              </tr>
+            </thead>
+
+            <tbody id="auditTableBody">
+              <tr>
+                <td colspan="6" class="admin-empty">
+                  Cargue las licencias para ver auditoría administrativa.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p id="licenseAuditStatus" class="form-status" aria-live="polite"></p>
+      </section>
+
+
+
     </section>
   </main>
 
@@ -457,6 +526,7 @@ import SectionTitle from "../../components/SectionTitle.astro";
     const ADMIN_LICENSE_ACTIVATIONS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-activations";
     const ADMIN_LICENSE_ACTIVATIONS_UPDATE_STATUS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-activations/update-status";
     const ADMIN_LICENSE_CHECKS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-checks";
+    const ADMIN_LICENSE_AUDIT_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-audit";
     const SMARTPOZO360_PRODUCT_ID = "spz-product-smartpozo360";
 
     const adminKeyInput = document.getElementById("adminApiKey");
@@ -491,6 +561,12 @@ import SectionTitle from "../../components/SectionTitle.astro";
     const checkTypeFilter = document.getElementById("checkTypeFilter");
     const checkResultFilter = document.getElementById("checkResultFilter");
     const checkSearchInput = document.getElementById("checkSearchInput");
+
+    const auditTableBody = document.getElementById("auditTableBody");
+    const refreshAuditButton = document.getElementById("refreshAuditButton");
+    const auditActionFilter = document.getElementById("auditActionFilter");
+    const auditSearchInput = document.getElementById("auditSearchInput");
+    const licenseAuditStatus = document.getElementById("licenseAuditStatus");
 
     const exportLicensesButton = document.getElementById("exportLicensesButton");
     const exportActivationsButton = document.getElementById("exportActivationsButton");
@@ -969,6 +1045,197 @@ import SectionTitle from "../../components/SectionTitle.astro";
 
 
 
+     function setLicenseAuditStatus(message, type = "") {
+      if (!licenseAuditStatus) return;
+
+      licenseAuditStatus.textContent = message;
+      licenseAuditStatus.className = type ? `form-status ${type}` : "form-status";
+    }
+
+    function getAuditActionLabel(action) {
+      const labels = {
+        admin_license_created: "Licencia creada",
+        admin_license_status_updated: "Cambio de estado",
+        admin_license_commercial_updated: "Cambio comercial",
+        admin_license_activation_status_updated: "Cambio de equipo",
+        license_device_activated: "Equipo activado"
+      };
+
+      return labels[action] || action || "N/D";
+    }
+
+    function buildLicenseAuditUrl() {
+      const params = new URLSearchParams();
+
+      params.set("limit", "100");
+
+      const action = String(auditActionFilter?.value || "all");
+      const search = String(auditSearchInput?.value || "").trim();
+
+      if (action !== "all") {
+        params.set("action", action);
+      }
+
+      if (search) {
+        params.set("search", search);
+      }
+
+      return `${ADMIN_LICENSE_AUDIT_URL}?${params.toString()}`;
+    }
+
+    function formatAuditChange(metadata = {}) {
+      const action = String(metadata.action || "");
+
+      if (metadata.previous && metadata.next) {
+        const previous = metadata.previous || {};
+        const next = metadata.next || {};
+
+        const parts = [];
+
+        if ((previous.licenseName || "") !== (next.licenseName || "")) {
+          parts.push(`Nombre: ${previous.licenseName || "N/D"} → ${next.licenseName || "N/D"}`);
+        }
+
+        if ((previous.startsAt || "") !== (next.startsAt || "")) {
+          parts.push(`Inicio: ${formatDate(previous.startsAt)} → ${formatDate(next.startsAt)}`);
+        }
+
+        if ((previous.expiresAt || "") !== (next.expiresAt || "")) {
+          parts.push(`Vencimiento: ${formatDate(previous.expiresAt)} → ${formatDate(next.expiresAt)}`);
+        }
+
+        if (String(previous.maxUsers || "") !== String(next.maxUsers || "")) {
+          parts.push(`Usuarios: ${previous.maxUsers || "N/D"} → ${next.maxUsers || "N/D"}`);
+        }
+
+        if (String(previous.maxDevices || "") !== String(next.maxDevices || "")) {
+          parts.push(`Dispositivos: ${previous.maxDevices || "N/D"} → ${next.maxDevices || "N/D"}`);
+        }
+
+        if (!parts.length) {
+          parts.push("Cambio comercial registrado sin diferencias principales visibles.");
+        }
+
+        return parts.join(" | ");
+      }
+
+      if (metadata.previousStatus || metadata.newStatus) {
+        return `Estado: ${getLicenseStatusLabel(metadata.previousStatus)} → ${getLicenseStatusLabel(metadata.newStatus)}`;
+      }
+
+      if (metadata.machineId && metadata.maxDevices) {
+        return `Equipo ${metadata.machineId}. Activaciones: ${metadata.activeActivations || "N/D"} / ${metadata.maxDevices}.`;
+      }
+
+      if (metadata.licenseId || metadata.licenseCode) {
+        return `Licencia ${metadata.licenseId || metadata.licenseCode}.`;
+      }
+
+      return JSON.stringify(metadata).slice(0, 240);
+    }
+
+    function getAuditLicenseInfo(metadata = {}) {
+      const licenseCode = metadata.licenseId || metadata.licenseCode || "";
+      const licenseName = metadata.licenseName || "";
+      const companyName = metadata.companyName || "";
+
+      return `
+        <strong>${escapeHtml(licenseCode || "Licencia no indicada")}</strong>
+        <small>${escapeHtml(licenseName || "Sin nombre")}</small>
+        <small>${escapeHtml(companyName || "Empresa no indicada")}</small>
+      `;
+    }
+
+    function renderLicenseAudit(audits = []) {
+      if (!auditTableBody) return;
+
+      if (!audits.length) {
+        auditTableBody.innerHTML = `
+          <tr>
+            <td colspan="6" class="admin-empty">
+              No hay auditoría registrada con esos filtros.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      auditTableBody.innerHTML = audits.map((audit) => {
+        const metadata = audit.metadata || {};
+
+        return `
+          <tr>
+            <td>
+              <strong>${escapeHtml(formatDateTime(audit.createdAt))}</strong>
+            </td>
+
+            <td>
+              <span class="admin-status-pill status-${escapeHtml(audit.action || "default")}">
+                ${escapeHtml(getAuditActionLabel(audit.action))}
+              </span>
+              <small>${escapeHtml(audit.action || "N/D")}</small>
+            </td>
+
+            <td>
+              <strong>${escapeHtml(audit.entityType || "N/D")}</strong>
+              <small>${escapeHtml(String(audit.entityId || "").slice(0, 18))}</small>
+            </td>
+
+            <td>
+              ${getAuditLicenseInfo(metadata)}
+            </td>
+
+            <td class="admin-message-cell">
+              ${escapeHtml(formatAuditChange(metadata))}
+            </td>
+
+            <td>
+              <strong>${escapeHtml(audit.actorUserId || "N/D")}</strong>
+            </td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    async function loadLicenseAudit() {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setLicenseAuditStatus("Ingrese la clave ADM para cargar auditoría de licencias.", "error");
+        return;
+      }
+
+      if (refreshAuditButton) refreshAuditButton.disabled = true;
+
+      try {
+        setLicenseAuditStatus("Cargando auditoría de licencias...");
+
+        const response = await fetch(buildLicenseAuditUrl(), {
+          method: "GET",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey
+          }
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudo cargar la auditoría de licencias.");
+        }
+
+        renderLicenseAudit(result.audits || []);
+        setLicenseAuditStatus(`Auditoría cargada: ${result.count || 0} de ${result.total || 0}`, "success");
+      } catch (error) {
+        renderLicenseAudit([]);
+        setLicenseAuditStatus(error.message || "Error al cargar auditoría de licencias.", "error");
+      } finally {
+        if (refreshAuditButton) refreshAuditButton.disabled = false;
+      }
+    }
+
+
+
     
      async function updateActivationStatus(activationId, nextStatus, button) {
       const adminKey = getAdminKey();
@@ -1436,9 +1703,11 @@ import SectionTitle from "../../components/SectionTitle.astro";
         renderLicenses(result.licenses || []);
         updateSummary(result.summary || {});
 
-        await loadActivations();
+         await loadActivations();
 
         await loadLicenseChecks();
+
+        await loadLicenseAudit();
 
 
         setStatus(
@@ -1815,6 +2084,17 @@ import SectionTitle from "../../components/SectionTitle.astro";
     });
 
 
+     refreshAuditButton?.addEventListener("click", loadLicenseAudit);
+    auditActionFilter?.addEventListener("change", loadLicenseAudit);
+
+    auditSearchInput?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        loadLicenseAudit();
+      }
+    });
+    
+
+
 
     exportLicensesButton?.addEventListener("click", exportLicensesCsv);
     exportActivationsButton?.addEventListener("click", exportActivationsCsv);
@@ -1871,7 +2151,7 @@ import SectionTitle from "../../components/SectionTitle.astro";
         await updateLicenseStatus(licenseId, nextStatus, button);
       }
     });
-    
+
 
 
      activationsTableBody?.addEventListener("click", async (event) => {
