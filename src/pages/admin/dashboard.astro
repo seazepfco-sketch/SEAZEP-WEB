@@ -204,6 +204,66 @@ import SectionTitle from "../../components/SectionTitle.astro";
 
 
 
+          <section class="admin-filter-panel admin-license-alerts-panel">
+        <div class="admin-filter-header">
+          <div>
+            <span class="eyebrow">Alertas ADM</span>
+            <h3>Alertas de licencias y activaciones</h3>
+            <p>
+              Señales rápidas para seguimiento comercial, técnico y administrativo de SmartPozo360.
+            </p>
+          </div>
+
+          <button class="btn btn-ghost" id="refreshLicenseAlertsButton" type="button">
+            Actualizar alertas
+          </button>
+        </div>
+
+        <div class="license-alert-grid">
+          <article class="license-alert-card warning">
+            <span>Licencias por vencer</span>
+            <strong id="alertExpiringLicenses">0</strong>
+            <small>Vencen dentro de 30 días.</small>
+          </article>
+
+          <article class="license-alert-card danger">
+            <span>Licencias vencidas</span>
+            <strong id="alertExpiredLicenses">0</strong>
+            <small>Requieren renovación o suspensión comercial.</small>
+          </article>
+
+          <article class="license-alert-card warning">
+            <span>Equipos suspendidos</span>
+            <strong id="alertSuspendedDevices">0</strong>
+            <small>Bloqueados por decisión ADM.</small>
+          </article>
+
+          <article class="license-alert-card danger">
+            <span>Equipos revocados</span>
+            <strong id="alertRevokedDevices">0</strong>
+            <small>Activaciones retiradas definitivamente.</small>
+          </article>
+
+          <article class="license-alert-card info">
+            <span>Intentos bloqueados</span>
+            <strong id="alertLimitBlocks">0</strong>
+            <small>Eventos por límite de dispositivos.</small>
+          </article>
+        </div>
+
+        <div class="license-alert-detail">
+          <h4>Detalle de alertas</h4>
+
+          <ul id="licenseAlertsList">
+            <li>No se han cargado alertas todavía.</li>
+          </ul>
+        </div>
+
+        <p id="licenseAlertsStatus" class="form-status" aria-live="polite"></p>
+      </section>
+
+
+
 
       <section class="admin-requests-section">
         <div class="admin-section-header">
@@ -287,6 +347,16 @@ const ADMIN_LICENSE_CHECKS_URL = "https://seazep-api.seazepfco.workers.dev/admin
     const licenseOverviewChecks = document.getElementById("licenseOverviewChecks");
     const licenseOverviewLimitBlocks = document.getElementById("licenseOverviewLimitBlocks");
     const licenseOverviewStatus = document.getElementById("licenseOverviewStatus");
+
+    const refreshLicenseAlertsButton = document.getElementById("refreshLicenseAlertsButton");
+    const alertExpiringLicenses = document.getElementById("alertExpiringLicenses");
+    const alertExpiredLicenses = document.getElementById("alertExpiredLicenses");
+    const alertSuspendedDevices = document.getElementById("alertSuspendedDevices");
+    const alertRevokedDevices = document.getElementById("alertRevokedDevices");
+    const alertLimitBlocks = document.getElementById("alertLimitBlocks");
+    const licenseAlertsList = document.getElementById("licenseAlertsList");
+    const licenseAlertsStatus = document.getElementById("licenseAlertsStatus");
+
 
     const tableBody = document.getElementById("requestsTableBody");
     const totalRequestsEl = document.getElementById("totalRequests");
@@ -854,6 +924,215 @@ async function updateRequestStatus(id, status) {
 
 
 
+       function setLicenseAlertsStatus(message, type = "") {
+      if (!licenseAlertsStatus) return;
+
+      licenseAlertsStatus.textContent = message;
+      licenseAlertsStatus.className = type ? `form-status ${type}` : "form-status";
+    }
+
+    function setLicenseAlertNumber(element, value) {
+      if (!element) return;
+      element.textContent = String(value || 0);
+    }
+
+    function getLicenseCode(item) {
+      return item.license_id || item.licenseId || item.license_code || item.licenseCode || "Licencia sin código";
+    }
+
+    function getLicenseName(item) {
+      return item.license_name || item.licenseName || "Sin nombre";
+    }
+
+    function getLicenseCompany(item) {
+      return item.company_name || item.companyName || "Empresa no encontrada";
+    }
+
+    function getLicenseExpiration(item) {
+      return item.expires_at || item.expiresAt || item.license_expires_at || item.licenseExpiresAt || "";
+    }
+
+    function daysUntil(value) {
+      if (!value) return null;
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) {
+        return null;
+      }
+
+      const today = new Date();
+      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const targetStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+      return Math.ceil((targetStart.getTime() - todayStart.getTime()) / 86400000);
+    }
+
+    function renderLicenseAlertsList(alerts = []) {
+      if (!licenseAlertsList) return;
+
+      if (!alerts.length) {
+        licenseAlertsList.innerHTML = `
+          <li class="license-alert-empty">
+            Sin alertas críticas por el momento.
+          </li>
+        `;
+        return;
+      }
+
+      licenseAlertsList.innerHTML = alerts.map((alert) => `
+        <li class="license-alert-item ${escapeHtml(alert.type || "info")}">
+          <strong>${escapeHtml(alert.title || "Alerta")}</strong>
+          <span>${escapeHtml(alert.text || "")}</span>
+        </li>
+      `).join("");
+    }
+
+    async function loadLicenseAlerts() {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setLicenseAlertsStatus("Ingrese la clave ADM para cargar alertas de licencias.", "error");
+        return;
+      }
+
+      if (refreshLicenseAlertsButton) {
+        refreshLicenseAlertsButton.disabled = true;
+      }
+
+      try {
+        setLicenseAlertsStatus("Cargando alertas de licencias...");
+
+        const [licensesResponse, activationsResponse, limitBlocksResponse] = await Promise.all([
+          fetch(`${ADMIN_LICENSES_URL}?limit=100`, {
+            method: "GET",
+            mode: "cors",
+            headers: {
+              "x-admin-key": adminKey
+            }
+          }),
+          fetch(`${ADMIN_LICENSE_ACTIVATIONS_URL}?limit=100`, {
+            method: "GET",
+            mode: "cors",
+            headers: {
+              "x-admin-key": adminKey
+            }
+          }),
+          fetch(`${ADMIN_LICENSE_CHECKS_URL}?result=device_limit_reached&limit=100`, {
+            method: "GET",
+            mode: "cors",
+            headers: {
+              "x-admin-key": adminKey
+            }
+          })
+        ]);
+
+        const licensesResult = await licensesResponse.json();
+        const activationsResult = await activationsResponse.json();
+        const limitBlocksResult = await limitBlocksResponse.json();
+
+        if (!licensesResponse.ok || !licensesResult.ok) {
+          throw new Error(licensesResult.message || "No se pudieron cargar licencias.");
+        }
+
+        if (!activationsResponse.ok || !activationsResult.ok) {
+          throw new Error(activationsResult.message || "No se pudieron cargar activaciones.");
+        }
+
+        if (!limitBlocksResponse.ok || !limitBlocksResult.ok) {
+          throw new Error(limitBlocksResult.message || "No se pudieron cargar intentos bloqueados.");
+        }
+
+        const licenses = licensesResult.licenses || [];
+        const activations = activationsResult.activations || [];
+
+        const expiringLicenses = licenses.filter((item) => {
+          const days = daysUntil(getLicenseExpiration(item));
+          const status = item.status || item.license_status || "";
+
+          return status === "active" && days !== null && days >= 0 && days <= 30;
+        });
+
+        const expiredLicenses = licenses.filter((item) => {
+          const days = daysUntil(getLicenseExpiration(item));
+          const status = item.status || item.license_status || "";
+
+          return status === "active" && days !== null && days < 0;
+        });
+
+        const suspendedDevices = activations.filter((item) => item.status === "suspended");
+        const revokedDevices = activations.filter((item) => item.status === "revoked");
+        const limitBlocks = limitBlocksResult.checks || [];
+
+        setLicenseAlertNumber(alertExpiringLicenses, expiringLicenses.length);
+        setLicenseAlertNumber(alertExpiredLicenses, expiredLicenses.length);
+        setLicenseAlertNumber(alertSuspendedDevices, suspendedDevices.length);
+        setLicenseAlertNumber(alertRevokedDevices, revokedDevices.length);
+        setLicenseAlertNumber(alertLimitBlocks, limitBlocksResult.total || limitBlocks.length);
+
+        const alerts = [];
+
+        for (const item of expiringLicenses.slice(0, 5)) {
+          const days = daysUntil(getLicenseExpiration(item));
+
+          alerts.push({
+            type: "warning",
+            title: "Licencia por vencer",
+            text: `${getLicenseCode(item)} — ${getLicenseCompany(item)} vence en ${days} día(s).`
+          });
+        }
+
+        for (const item of expiredLicenses.slice(0, 5)) {
+          alerts.push({
+            type: "danger",
+            title: "Licencia vencida",
+            text: `${getLicenseCode(item)} — ${getLicenseCompany(item)} ya venció.`
+          });
+        }
+
+        for (const item of suspendedDevices.slice(0, 5)) {
+          alerts.push({
+            type: "warning",
+            title: "Equipo suspendido",
+            text: `${item.machine_id || "Equipo sin ID"} — ${item.company_name || "Empresa no encontrada"} está suspendido.`
+          });
+        }
+
+        for (const item of revokedDevices.slice(0, 5)) {
+          alerts.push({
+            type: "danger",
+            title: "Equipo revocado",
+            text: `${item.machine_id || "Equipo sin ID"} — ${item.company_name || "Empresa no encontrada"} está revocado.`
+          });
+        }
+
+        if ((limitBlocksResult.total || limitBlocks.length) > 0) {
+          alerts.push({
+            type: "info",
+            title: "Intentos bloqueados por límite",
+            text: `Se detectaron ${limitBlocksResult.total || limitBlocks.length} evento(s) por límite de dispositivos.`
+          });
+        }
+
+        renderLicenseAlertsList(alerts);
+        setLicenseAlertsStatus("Alertas de licencias actualizadas.", "success");
+      } catch (error) {
+        setLicenseAlertNumber(alertExpiringLicenses, 0);
+        setLicenseAlertNumber(alertExpiredLicenses, 0);
+        setLicenseAlertNumber(alertSuspendedDevices, 0);
+        setLicenseAlertNumber(alertRevokedDevices, 0);
+        setLicenseAlertNumber(alertLimitBlocks, 0);
+        renderLicenseAlertsList([]);
+        setLicenseAlertsStatus(error.message || "Error al cargar alertas de licencias.", "error");
+      } finally {
+        if (refreshLicenseAlertsButton) {
+          refreshLicenseAlertsButton.disabled = false;
+        }
+      }
+    }
+
+
+
 
     async function loadRequests() {
   if (!keyInput) return;
@@ -933,6 +1212,7 @@ async function updateRequestStatus(id, status) {
 async function loadAdminDashboardData() {
   await loadRequests();
   await loadLicenseOverview();
+  await loadLicenseAlerts();
 }
 
 
@@ -956,6 +1236,8 @@ clearFiltersButton?.addEventListener("click", () => {
 
     loadButton?.addEventListener("click", loadAdminDashboardData);
     refreshButton?.addEventListener("click", loadAdminDashboardData);
+
+     refreshLicenseAlertsButton?.addEventListener("click", loadLicenseAlerts);
 
 
     tableBody?.addEventListener("click", async (event) => {

@@ -1698,3 +1698,132 @@ sers\azada\Documents\PROYECTOS_SOFTWARE\SEAZEP\SEAZEP-WEB\src\styles\global.css
     grid-template-columns: 1fr;
   }
 }
+
+
+
+.admin-license-alerts-panel {
+  margin-top: 22px;
+  margin-bottom: 24px;
+}
+
+.license-alert-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.license-alert-card {
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.license-alert-card span {
+  display: block;
+  color: #94a3b8;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.license-alert-card strong {
+  display: block;
+  margin-top: 8px;
+  color: #f8fafc;
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.license-alert-card small {
+  display: block;
+  margin-top: 8px;
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+
+.license-alert-card.warning {
+  border-color: rgba(245, 158, 11, 0.36);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.license-alert-card.danger {
+  border-color: rgba(239, 68, 68, 0.36);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.license-alert-card.info {
+  border-color: rgba(14, 165, 233, 0.36);
+  background: rgba(14, 165, 233, 0.08);
+}
+
+.license-alert-detail {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.54);
+}
+
+.license-alert-detail h4 {
+  margin: 0 0 12px;
+  color: #f8fafc;
+}
+
+.license-alert-detail ul {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.license-alert-item {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.72);
+}
+
+.license-alert-item strong {
+  display: block;
+  color: #f8fafc;
+}
+
+.license-alert-item span {
+  display: block;
+  margin-top: 4px;
+  color: #cbd5e1;
+}
+
+.license-alert-item.warning {
+  border-color: rgba(245, 158, 11, 0.36);
+}
+
+.license-alert-item.danger {
+  border-color: rgba(239, 68, 68, 0.36);
+}
+
+.license-alert-item.info {
+  border-color: rgba(14, 165, 233, 0.36);
+}
+
+.license-alert-empty {
+  color: #cbd5e1;
+}
+
+@media (max-width: 1100px) {
+  .license-alert-grid {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .license-alert-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
