@@ -149,6 +149,11 @@ if (url.pathname === "/admin/licenses/update-status" && request.method === "POST
 }
 
 
+  if (url.pathname === "/admin/licenses/update-commercial" && request.method === "POST") {
+  return handleAdminUpdateLicenseCommercial(request, env);
+}
+
+
   if (url.pathname === "/admin/license-activations" && request.method === "GET") {
   return handleAdminListLicenseActivations(request, env);
 }
@@ -4780,6 +4785,251 @@ async function handleAdminUpdateLicenseStatus(request, env) {
     updatedAt: now
   });
 }
+
+
+
+  async function handleAdminUpdateLicenseCommercial(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const licenseDbId = cleanText(body.id || body.licenseDbId || "", 100);
+  const licenseName = cleanText(body.licenseName || "", 180);
+  const startsAt = cleanText(body.startsAt || "", 80);
+  const expiresAt = cleanText(body.expiresAt || "", 80);
+  const notes = cleanText(body.notes || body.note || "", 1200);
+
+  const maxUsersRaw = Number(body.maxUsers);
+  const maxDevicesRaw = Number(body.maxDevices);
+
+  const maxUsers = Number.isFinite(maxUsersRaw)
+    ? Math.max(Math.trunc(maxUsersRaw), 1)
+    : null;
+
+  const maxDevices = Number.isFinite(maxDevicesRaw)
+    ? Math.max(Math.trunc(maxDevicesRaw), 1)
+    : null;
+
+  if (!licenseDbId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_LICENSE_ID",
+      message: "Falta el ID interno de la licencia."
+    }, 400);
+  }
+
+  const existing = await env.DB.prepare(`
+    SELECT
+      l.id,
+      l.license_id,
+      l.license_name,
+      l.company_id,
+      c.name AS company_name,
+      l.product_id,
+      sp.name AS product_name,
+      l.status,
+      l.starts_at,
+      l.expires_at,
+      l.max_users,
+      l.max_devices,
+      l.notes
+    FROM licenses l
+    LEFT JOIN companies c ON c.id = l.company_id
+    LEFT JOIN software_products sp ON sp.id = l.product_id
+    WHERE l.id = ?
+    LIMIT 1
+  `)
+    .bind(licenseDbId)
+    .first();
+
+  if (!existing) {
+    return corsResponse({
+      ok: false,
+      code: "LICENSE_NOT_FOUND",
+      message: "No se encontró la licencia."
+    }, 404);
+  }
+
+  const nextLicenseName = licenseName || existing.license_name || "";
+  const nextStartsAt = startsAt || existing.starts_at || "";
+  const nextExpiresAt = expiresAt || existing.expires_at || "";
+  const nextMaxUsers = maxUsers || Number(existing.max_users || 1);
+  const nextMaxDevices = maxDevices || Number(existing.max_devices || 1);
+  const nextNotes = notes || existing.notes || "";
+  const now = new Date().toISOString();
+
+  const startsDate = nextStartsAt ? new Date(nextStartsAt) : null;
+  const expiresDate = nextExpiresAt ? new Date(nextExpiresAt) : null;
+
+  if (startsDate && Number.isNaN(startsDate.getTime())) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_START_DATE",
+      message: "La fecha de inicio no es válida."
+    }, 400);
+  }
+
+  if (expiresDate && Number.isNaN(expiresDate.getTime())) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_EXPIRATION_DATE",
+      message: "La fecha de vencimiento no es válida."
+    }, 400);
+  }
+
+  if (startsDate && expiresDate && expiresDate.getTime() <= startsDate.getTime()) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_DATE_RANGE",
+      message: "La fecha de vencimiento debe ser posterior a la fecha de inicio."
+    }, 400);
+  }
+
+  if (nextMaxUsers < 1 || nextMaxUsers > 9999) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_MAX_USERS",
+      message: "El máximo de usuarios debe ser mayor o igual a 1."
+    }, 400);
+  }
+
+  if (nextMaxDevices < 1 || nextMaxDevices > 9999) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_MAX_DEVICES",
+      message: "El máximo de dispositivos debe ser mayor o igual a 1."
+    }, 400);
+  }
+
+  const activeActivations = await env.DB.prepare(`
+    SELECT COUNT(*) AS total
+    FROM license_activations
+    WHERE license_id = ?
+      AND status = 'active'
+  `)
+    .bind(existing.id)
+    .first();
+
+  const activeDevices = Number(activeActivations?.total || 0);
+
+  if (nextMaxDevices < activeDevices) {
+    return corsResponse({
+      ok: false,
+      code: "MAX_DEVICES_BELOW_ACTIVE_ACTIVATIONS",
+      message: `No puede bajar el límite a ${nextMaxDevices} porque ya existen ${activeDevices} equipo(s) activo(s).`
+    }, 400);
+  }
+
+  await env.DB.prepare(`
+    UPDATE licenses
+    SET
+      license_name = ?,
+      starts_at = ?,
+      expires_at = ?,
+      max_users = ?,
+      max_devices = ?,
+      notes = ?,
+      updated_at = ?
+    WHERE id = ?
+  `)
+    .bind(
+      nextLicenseName,
+      nextStartsAt,
+      nextExpiresAt,
+      nextMaxUsers,
+      nextMaxDevices,
+      nextNotes,
+      now,
+      existing.id
+    )
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      "temporary-admin",
+      "admin_license_commercial_updated",
+      "licenses",
+      existing.id,
+      JSON.stringify({
+        licenseDbId: existing.id,
+        licenseCode: existing.license_id || "",
+        companyId: existing.company_id || "",
+        companyName: existing.company_name || "",
+        productId: existing.product_id || "",
+        productName: existing.product_name || "",
+        previous: {
+          licenseName: existing.license_name || "",
+          startsAt: existing.starts_at || "",
+          expiresAt: existing.expires_at || "",
+          maxUsers: Number(existing.max_users || 1),
+          maxDevices: Number(existing.max_devices || 1),
+          notes: existing.notes || ""
+        },
+        next: {
+          licenseName: nextLicenseName,
+          startsAt: nextStartsAt,
+          expiresAt: nextExpiresAt,
+          maxUsers: nextMaxUsers,
+          maxDevices: nextMaxDevices,
+          notes: nextNotes
+        }
+      }),
+      now
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    id: existing.id,
+    licenseId: existing.license_id,
+    message: "Datos comerciales de la licencia actualizados correctamente.",
+    updatedAt: now,
+    license: {
+      id: existing.id,
+      licenseId: existing.license_id,
+      licenseName: nextLicenseName,
+      startsAt: nextStartsAt,
+      expiresAt: nextExpiresAt,
+      maxUsers: nextMaxUsers,
+      maxDevices: nextMaxDevices,
+      notes: nextNotes
+    }
+  });
+}
+
+
+
+
+
 
 function generateLicenseCode() {
   const randomBytes = crypto.getRandomValues(new Uint8Array(9));
