@@ -166,6 +166,12 @@ if (url.pathname === "/admin/license-activations/update-status" && request.metho
 if (url.pathname === "/admin/license-checks" && request.method === "GET") {
   return handleAdminListLicenseChecks(request, env);
 }
+
+
+
+  if (url.pathname === "/admin/license-audit" && request.method === "GET") {
+  return handleAdminListLicenseAudit(request, env);
+}
   
 
   
@@ -5572,6 +5578,177 @@ function parsePositiveInteger(value, fallback) {
     checks: listResult.results || []
   });
 }
+
+
+
+
+  async function handleAdminListLicenseAudit(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  const url = new URL(request.url);
+
+  const action = cleanText(url.searchParams.get("action") || "", 120);
+  const entityType = cleanText(url.searchParams.get("entityType") || "", 120);
+  const entityId = cleanText(url.searchParams.get("entityId") || "", 120);
+  const search = cleanText(url.searchParams.get("search") || "", 160);
+
+  const rawLimit = Number(url.searchParams.get("limit") || 50);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(Math.trunc(rawLimit), 1), 100)
+    : 50;
+
+  const whereParts = [];
+  const params = [];
+
+  const licenseAuditActions = [
+    "admin_license_created",
+    "admin_license_status_updated",
+    "admin_license_commercial_updated",
+    "admin_license_activation_status_updated",
+    "license_device_activated"
+  ];
+
+  const actionPlaceholders = licenseAuditActions.map(() => "?").join(", ");
+
+  whereParts.push(`action IN (${actionPlaceholders})`);
+  params.push(...licenseAuditActions);
+
+  if (action && action !== "all") {
+    whereParts.push("action = ?");
+    params.push(action);
+  }
+
+  if (entityType && entityType !== "all") {
+    whereParts.push("entity_type = ?");
+    params.push(entityType);
+  }
+
+  if (entityId) {
+    whereParts.push("entity_id = ?");
+    params.push(entityId);
+  }
+
+  if (search) {
+    const likeSearch = `%${search}%`;
+
+    whereParts.push(`(
+      action LIKE ?
+      OR entity_type LIKE ?
+      OR entity_id LIKE ?
+      OR actor_user_id LIKE ?
+      OR metadata LIKE ?
+    )`);
+
+    params.push(
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch
+    );
+  }
+
+  const whereSql = `WHERE ${whereParts.join(" AND ")}`;
+
+  const listSql = `
+    SELECT
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    FROM audit_logs
+    ${whereSql}
+    ORDER BY created_at DESC
+    LIMIT ${limit}
+  `;
+
+  const countSql = `
+    SELECT COUNT(*) AS total
+    FROM audit_logs
+    ${whereSql}
+  `;
+
+  const listResult = await env.DB.prepare(listSql)
+    .bind(...params)
+    .all();
+
+  const countResult = await env.DB.prepare(countSql)
+    .bind(...params)
+    .first();
+
+  const summaryResult = await env.DB.prepare(`
+    SELECT
+      action,
+      COUNT(*) AS total
+    FROM audit_logs
+    WHERE action IN (${actionPlaceholders})
+    GROUP BY action
+  `)
+    .bind(...licenseAuditActions)
+    .all();
+
+  const summary = {
+    total: 0,
+    byAction: {}
+  };
+
+  for (const row of summaryResult.results || []) {
+    const key = row.action || "unknown";
+    const total = Number(row.total || 0);
+
+    summary.byAction[key] = total;
+    summary.total += total;
+  }
+
+  const audits = (listResult.results || []).map((item) => {
+    let metadata = {};
+
+    try {
+      metadata = JSON.parse(item.metadata || "{}");
+    } catch {
+      metadata = {
+        raw: item.metadata || ""
+      };
+    }
+
+    return {
+      id: item.id,
+      actorUserId: item.actor_user_id || "",
+      action: item.action || "",
+      entityType: item.entity_type || "",
+      entityId: item.entity_id || "",
+      metadata,
+      createdAt: item.created_at || ""
+    };
+  });
+
+  return corsResponse({
+    ok: true,
+    count: audits.length,
+    total: Number(countResult?.total || 0),
+    limit,
+    filters: {
+      action: action || "all",
+      entityType: entityType || "all",
+      entityId,
+      search
+    },
+    summary,
+    audits
+  });
+}
+
 
 
 
