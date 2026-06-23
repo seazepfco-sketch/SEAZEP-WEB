@@ -148,6 +148,15 @@ if (url.pathname === "/admin/licenses/update-status" && request.method === "POST
   return handleAdminUpdateLicenseStatus(request, env);
 }
 
+
+  if (url.pathname === "/admin/license-activations" && request.method === "GET") {
+  return handleAdminListLicenseActivations(request, env);
+}
+
+  if (url.pathname === "/admin/license-activations" && request.method === "GET") {
+  return handleAdminListLicenseActivations(request, env);
+}
+
   
 if (url.pathname === "/user/manuals" && request.method === "GET") {
   return handleUserListManuals(request, env);
@@ -169,21 +178,14 @@ if (url.pathname === "/user/manuals" && request.method === "GET") {
       Rutas reservadas para fases futuras de SmartPozo360.
       Se dejan vivas para no romper la estructura del proyecto.
     */
-    if (url.pathname === "/license/check" && request.method === "POST") {
-      return corsResponse({
-        ok: true,
-        status: "reserved",
-        message: "Endpoint reservado para validación futura de licencias."
-      });
-    }
+    
+      if (url.pathname === "/license/check" && request.method === "POST") {
+  return handleLicenseCheck(request, env);
+}
 
     if (url.pathname === "/activation/register" && request.method === "POST") {
-      return corsResponse({
-        ok: true,
-        status: "reserved",
-        message: "Endpoint reservado para activaciones futuras."
-      });
-    }
+  return handleActivationRegister(request, env);
+}
 
     return corsResponse({
       ok: false,
@@ -4302,8 +4304,8 @@ function getSafeManualFileName(value) {
     LEFT JOIN companies c ON c.id = l.company_id
     LEFT JOIN software_products sp ON sp.id = l.product_id
     LEFT JOIN license_activations la
-      ON la.license_id = l.license_id
-      AND la.status = 'active'
+  ON la.license_id = l.id
+  AND la.status = 'active'
     ${whereSql}
     GROUP BY
       l.id,
@@ -4719,14 +4721,14 @@ async function handleAdminUpdateLicenseStatus(request, env) {
 
   if (status === "suspended" || status === "revoked" || status === "expired") {
     await env.DB.prepare(`
-      UPDATE license_activations
-      SET
-        status = ?
-      WHERE license_id = ?
-        AND status = 'active'
-    `)
-      .bind(status, existing.license_id)
-      .run();
+  UPDATE license_activations
+  SET
+    status = ?
+  WHERE license_id = ?
+    AND status = 'active'
+`)
+  .bind(status, existing.id)
+  .run();
   }
 
   await env.DB.prepare(`
@@ -4798,6 +4800,1010 @@ function parsePositiveInteger(value, fallback) {
 
   return integer;
 }
+
+
+
+  async function handleAdminListLicenseActivations(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  const url = new URL(request.url);
+
+  const licenseDbId = cleanText(url.searchParams.get("licenseDbId") || "", 80);
+  const status = cleanText(url.searchParams.get("status") || "", 40);
+  const search = cleanText(url.searchParams.get("search") || "", 120);
+
+  const rawLimit = Number(url.searchParams.get("limit") || 50);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(Math.trunc(rawLimit), 1), 100)
+    : 50;
+
+  const whereParts = [];
+  const params = [];
+
+  if (licenseDbId) {
+    whereParts.push("la.license_id = ?");
+    params.push(licenseDbId);
+  }
+
+  if (status && status !== "all") {
+    whereParts.push("la.status = ?");
+    params.push(status);
+  }
+
+  if (search) {
+    const likeSearch = `%${search}%`;
+
+    whereParts.push(`(
+      l.license_id LIKE ?
+      OR l.license_name LIKE ?
+      OR la.machine_id LIKE ?
+      OR la.device_label LIKE ?
+      OR la.app_version LIKE ?
+      OR c.name LIKE ?
+      OR sp.name LIKE ?
+      OR sp.slug LIKE ?
+    )`);
+
+    params.push(
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch
+    );
+  }
+
+  const whereSql = whereParts.length
+    ? `WHERE ${whereParts.join(" AND ")}`
+    : "";
+
+  const listSql = `
+    SELECT
+      la.id,
+      la.license_id AS license_db_id,
+      l.license_id AS license_code,
+      l.license_name,
+      l.status AS license_status,
+      l.expires_at AS license_expires_at,
+      la.product_id,
+      sp.slug AS product_slug,
+      sp.name AS product_name,
+      la.company_id,
+      c.name AS company_name,
+      c.status AS company_status,
+      la.machine_id,
+      la.device_label,
+      la.app_version,
+      la.status,
+      la.activated_at,
+      la.last_check_at
+    FROM license_activations la
+    LEFT JOIN licenses l ON l.id = la.license_id
+    LEFT JOIN software_products sp ON sp.id = la.product_id
+    LEFT JOIN companies c ON c.id = la.company_id
+    ${whereSql}
+    ORDER BY COALESCE(la.last_check_at, la.activated_at) DESC
+    LIMIT ${limit}
+  `;
+
+  const countSql = `
+    SELECT COUNT(*) AS total
+    FROM license_activations la
+    LEFT JOIN licenses l ON l.id = la.license_id
+    LEFT JOIN software_products sp ON sp.id = la.product_id
+    LEFT JOIN companies c ON c.id = la.company_id
+    ${whereSql}
+  `;
+
+  const listStatement = env.DB.prepare(listSql);
+  const countStatement = env.DB.prepare(countSql);
+
+  const listResult = params.length
+    ? await listStatement.bind(...params).all()
+    : await listStatement.all();
+
+  const countResult = params.length
+    ? await countStatement.bind(...params).first()
+    : await countStatement.first();
+
+  const summaryResult = await env.DB.prepare(`
+    SELECT
+      COALESCE(status, 'active') AS status,
+      COUNT(*) AS total
+    FROM license_activations
+    GROUP BY COALESCE(status, 'active')
+  `).all();
+
+  const totalAllResult = await env.DB.prepare(`
+    SELECT COUNT(*) AS total
+    FROM license_activations
+  `).first();
+
+  const summary = {
+    total: Number(totalAllResult?.total || 0),
+    active: 0,
+    suspended: 0,
+    expired: 0,
+    revoked: 0
+  };
+
+  for (const row of summaryResult.results || []) {
+    const key = row.status || "active";
+    summary[key] = Number(row.total || 0);
+  }
+
+  return corsResponse({
+    ok: true,
+    count: (listResult.results || []).length,
+    total: Number(countResult?.total || 0),
+    limit,
+    filters: {
+      licenseDbId,
+      status: status || "all",
+      search
+    },
+    summary,
+    activations: listResult.results || []
+  });
+}
+
+
+  
+  async function handleLicenseCheck(request, env) {
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      valid: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const requestedLicenseId = cleanText(
+    body.licenseId || body.license_id || body.key || "",
+    120
+  ).toUpperCase();
+
+  const productSlug = cleanText(
+    body.productSlug || body.product_slug || "smartpozo360",
+    80
+  ).toLowerCase();
+
+  const productId = cleanText(
+    body.productId || body.product_id || "",
+    80
+  );
+
+  const machineId = cleanText(
+    body.machineId || body.machine_id || "",
+    180
+  );
+
+  const appVersion = cleanText(
+    body.appVersion || body.app_version || "",
+    80
+  );
+
+  const checkType = cleanText(
+    body.checkType || "license_check",
+    80
+  );
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const ipAddress = request.headers.get("cf-connecting-ip") || "";
+  const userAgent = cleanText(request.headers.get("user-agent") || "", 500);
+
+  if (!requestedLicenseId) {
+    return corsResponse({
+      ok: false,
+      valid: false,
+      code: "MISSING_LICENSE_ID",
+      message: "Falta el identificador de licencia."
+    }, 400);
+  }
+
+  const license = await env.DB.prepare(`
+    SELECT
+      l.id AS license_db_id,
+      l.company_id,
+      c.name AS company_name,
+      c.status AS company_status,
+      l.product_id,
+      sp.slug AS product_slug,
+      sp.name AS product_name,
+      sp.status AS product_status,
+      l.license_id,
+      l.license_name,
+      l.machine_id,
+      l.status,
+      l.starts_at,
+      l.activated_at,
+      l.expires_at,
+      l.max_users,
+      l.max_devices,
+      l.created_at,
+      l.updated_at
+    FROM licenses l
+    INNER JOIN software_products sp ON sp.id = l.product_id
+    LEFT JOIN companies c ON c.id = l.company_id
+    WHERE upper(l.license_id) = upper(?)
+      AND (
+        sp.slug = ?
+        OR sp.id = ?
+        OR ? = ''
+      )
+    LIMIT 1
+  `)
+    .bind(
+      requestedLicenseId,
+      productSlug,
+      productId,
+      productId
+    )
+    .first();
+
+  if (!license) {
+    await recordLicenseCheck(env, {
+      licenseId: requestedLicenseId,
+      companyId: null,
+      productId: productId || null,
+      machineId,
+      checkType,
+      result: "not_found",
+      ipAddress,
+      userAgent
+    });
+
+    return corsResponse({
+      ok: true,
+      valid: false,
+      code: "LICENSE_NOT_FOUND",
+      message: "Licencia no encontrada para el producto indicado.",
+      checkedAt: nowIso
+    });
+  }
+
+  let result = "valid";
+  let valid = true;
+  let code = "LICENSE_VALID";
+  let message = "Licencia válida.";
+  let requiresActivation = false;
+  let canActivate = false;
+  let activeActivations = 0;
+  let activation = null;
+
+  if ((license.product_status || "") !== "published") {
+    valid = false;
+    result = "product_not_published";
+    code = "PRODUCT_NOT_AVAILABLE";
+    message = "El software asociado no está publicado.";
+  }
+
+  if (valid && license.company_status && license.company_status !== "active") {
+    valid = false;
+    result = "company_not_active";
+    code = "COMPANY_NOT_ACTIVE";
+    message = "La empresa asociada no está activa.";
+  }
+
+  if (valid && (license.status || "active") !== "active") {
+    valid = false;
+    result = license.status || "inactive";
+    code = `LICENSE_${String(license.status || "inactive").toUpperCase()}`;
+    message = `La licencia está en estado ${license.status}.`;
+  }
+
+  const startsAt = license.starts_at
+    ? new Date(license.starts_at)
+    : null;
+
+  if (
+    valid &&
+    startsAt &&
+    !Number.isNaN(startsAt.getTime()) &&
+    startsAt > now
+  ) {
+    valid = false;
+    result = "not_started";
+    code = "LICENSE_NOT_STARTED";
+    message = "La licencia aún no inicia vigencia.";
+  }
+
+  const expiresAt = license.expires_at
+    ? new Date(license.expires_at)
+    : null;
+
+  if (
+    valid &&
+    expiresAt &&
+    !Number.isNaN(expiresAt.getTime()) &&
+    expiresAt <= now
+  ) {
+    valid = false;
+    result = "expired";
+    code = "LICENSE_EXPIRED";
+    message = "La licencia está vencida.";
+
+    await env.DB.prepare(`
+      UPDATE licenses
+      SET
+        status = 'expired',
+        updated_at = ?
+      WHERE id = ?
+        AND status = 'active'
+    `)
+      .bind(nowIso, license.license_db_id)
+      .run();
+  }
+
+  if (machineId) {
+    activation = await env.DB.prepare(`
+      SELECT
+        id,
+        license_id,
+        product_id,
+        company_id,
+        machine_id,
+        device_label,
+        app_version,
+        status,
+        activated_at,
+        last_check_at
+      FROM license_activations
+      WHERE license_id = ?
+        AND machine_id = ?
+      ORDER BY activated_at DESC
+      LIMIT 1
+    `)
+      .bind(license.license_db_id, machineId)
+      .first();
+
+    const activationsCount = await env.DB.prepare(`
+      SELECT COUNT(*) AS total
+      FROM license_activations
+      WHERE license_id = ?
+        AND status = 'active'
+    `)
+      .bind(license.license_db_id)
+      .first();
+
+    activeActivations = Number(activationsCount?.total || 0);
+
+    if (valid && activation && activation.status === "active") {
+      await env.DB.prepare(`
+        UPDATE license_activations
+        SET
+          last_check_at = ?,
+          app_version = COALESCE(?, app_version)
+        WHERE id = ?
+      `)
+        .bind(nowIso, appVersion || null, activation.id)
+        .run();
+
+      result = "valid";
+      code = "LICENSE_VALID_ACTIVATED_DEVICE";
+      message = "Licencia válida para este equipo.";
+    }
+
+    if (valid && (!activation || activation.status !== "active")) {
+      requiresActivation = true;
+
+      if (activeActivations >= Number(license.max_devices || 1)) {
+        valid = false;
+        canActivate = false;
+        result = "device_limit_reached";
+        code = "DEVICE_LIMIT_REACHED";
+        message = "La licencia alcanzó el límite de dispositivos activos.";
+      } else {
+        valid = true;
+        canActivate = true;
+        result = "requires_activation";
+        code = "LICENSE_REQUIRES_ACTIVATION";
+        message = "La licencia es válida, pero este equipo requiere activación.";
+      }
+    }
+  }
+
+  await recordLicenseCheck(env, {
+    licenseId: license.license_id,
+    companyId: license.company_id || null,
+    productId: license.product_id || null,
+    machineId,
+    checkType,
+    result,
+    ipAddress,
+    userAgent
+  });
+
+  return corsResponse({
+    ok: true,
+    valid,
+    code,
+    message,
+    checkedAt: nowIso,
+    license: {
+      id: license.license_db_id,
+      licenseId: license.license_id,
+      licenseName: license.license_name || "",
+      status: valid ? license.status : result,
+      startsAt: license.starts_at || "",
+      expiresAt: license.expires_at || "",
+      maxUsers: Number(license.max_users || 1),
+      maxDevices: Number(license.max_devices || 1)
+    },
+    product: {
+      id: license.product_id,
+      slug: license.product_slug,
+      name: license.product_name,
+      status: license.product_status
+    },
+    company: {
+      id: license.company_id || "",
+      name: license.company_name || "",
+      status: license.company_status || ""
+    },
+    device: {
+      machineId,
+      activated: Boolean(activation && activation.status === "active"),
+      activationStatus: activation?.status || "",
+      activeActivations,
+      requiresActivation,
+      canActivate
+    }
+  });
+}
+
+async function recordLicenseCheck(env, data) {
+  try {
+    await env.DB.prepare(`
+      INSERT INTO license_checks (
+        id,
+        license_id,
+        company_id,
+        product_id,
+        machine_id,
+        check_type,
+        result,
+        ip_address,
+        user_agent,
+        checked_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+      .bind(
+        crypto.randomUUID(),
+        data.licenseId,
+        data.companyId,
+        data.productId,
+        data.machineId || null,
+        data.checkType || "license_check",
+        data.result || "unknown",
+        data.ipAddress || "",
+        data.userAgent || "",
+        new Date().toISOString()
+      )
+      .run();
+  } catch {
+    /*
+      No se detiene la validación si falla el registro de auditoría.
+    */
+  }
+}
+
+
+
+  async function handleActivationRegister(request, env) {
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      activated: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const requestedLicenseId = cleanText(
+    body.licenseId || body.license_id || body.key || "",
+    120
+  ).toUpperCase();
+
+  const productSlug = cleanText(
+    body.productSlug || body.product_slug || "smartpozo360",
+    80
+  ).toLowerCase();
+
+  const productId = cleanText(
+    body.productId || body.product_id || "",
+    80
+  );
+
+  const machineId = cleanText(
+    body.machineId || body.machine_id || "",
+    180
+  );
+
+  const deviceLabel = cleanText(
+    body.deviceLabel || body.device_label || "",
+    180
+  );
+
+  const appVersion = cleanText(
+    body.appVersion || body.app_version || "",
+    80
+  );
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const ipAddress = request.headers.get("cf-connecting-ip") || "";
+  const userAgent = cleanText(request.headers.get("user-agent") || "", 500);
+
+  if (!requestedLicenseId) {
+    return corsResponse({
+      ok: false,
+      activated: false,
+      code: "MISSING_LICENSE_ID",
+      message: "Falta el identificador de licencia."
+    }, 400);
+  }
+
+  if (!machineId) {
+    return corsResponse({
+      ok: false,
+      activated: false,
+      code: "MISSING_MACHINE_ID",
+      message: "Falta el identificador del equipo."
+    }, 400);
+  }
+
+  const license = await env.DB.prepare(`
+    SELECT
+      l.id AS license_db_id,
+      l.company_id,
+      c.name AS company_name,
+      c.status AS company_status,
+      l.product_id,
+      sp.slug AS product_slug,
+      sp.name AS product_name,
+      sp.status AS product_status,
+      l.license_id,
+      l.license_name,
+      l.machine_id,
+      l.status,
+      l.starts_at,
+      l.activated_at,
+      l.expires_at,
+      l.max_users,
+      l.max_devices,
+      l.created_at,
+      l.updated_at
+    FROM licenses l
+    INNER JOIN software_products sp ON sp.id = l.product_id
+    LEFT JOIN companies c ON c.id = l.company_id
+    WHERE upper(l.license_id) = upper(?)
+      AND (
+        sp.slug = ?
+        OR sp.id = ?
+        OR ? = ''
+      )
+    LIMIT 1
+  `)
+    .bind(
+      requestedLicenseId,
+      productSlug,
+      productId,
+      productId
+    )
+    .first();
+
+  if (!license) {
+    await recordLicenseCheck(env, {
+      licenseId: requestedLicenseId,
+      companyId: null,
+      productId: productId || null,
+      machineId,
+      checkType: "activation_register",
+      result: "license_not_found",
+      ipAddress,
+      userAgent
+    });
+
+    return corsResponse({
+      ok: true,
+      activated: false,
+      code: "LICENSE_NOT_FOUND",
+      message: "Licencia no encontrada para el producto indicado.",
+      checkedAt: nowIso
+    }, 404);
+  }
+
+  if ((license.product_status || "") !== "published") {
+    await recordLicenseCheck(env, {
+      licenseId: license.license_id,
+      companyId: license.company_id || null,
+      productId: license.product_id || null,
+      machineId,
+      checkType: "activation_register",
+      result: "product_not_published",
+      ipAddress,
+      userAgent
+    });
+
+    return corsResponse({
+      ok: true,
+      activated: false,
+      code: "PRODUCT_NOT_AVAILABLE",
+      message: "El software asociado no está publicado.",
+      checkedAt: nowIso
+    }, 403);
+  }
+
+  if (license.company_status && license.company_status !== "active") {
+    await recordLicenseCheck(env, {
+      licenseId: license.license_id,
+      companyId: license.company_id || null,
+      productId: license.product_id || null,
+      machineId,
+      checkType: "activation_register",
+      result: "company_not_active",
+      ipAddress,
+      userAgent
+    });
+
+    return corsResponse({
+      ok: true,
+      activated: false,
+      code: "COMPANY_NOT_ACTIVE",
+      message: "La empresa asociada no está activa.",
+      checkedAt: nowIso
+    }, 403);
+  }
+
+  if ((license.status || "active") !== "active") {
+    await recordLicenseCheck(env, {
+      licenseId: license.license_id,
+      companyId: license.company_id || null,
+      productId: license.product_id || null,
+      machineId,
+      checkType: "activation_register",
+      result: license.status || "inactive",
+      ipAddress,
+      userAgent
+    });
+
+    return corsResponse({
+      ok: true,
+      activated: false,
+      code: `LICENSE_${String(license.status || "inactive").toUpperCase()}`,
+      message: `La licencia está en estado ${license.status}.`,
+      checkedAt: nowIso
+    }, 403);
+  }
+
+  const startsAt = license.starts_at
+    ? new Date(license.starts_at)
+    : null;
+
+  if (
+    startsAt &&
+    !Number.isNaN(startsAt.getTime()) &&
+    startsAt > now
+  ) {
+    await recordLicenseCheck(env, {
+      licenseId: license.license_id,
+      companyId: license.company_id || null,
+      productId: license.product_id || null,
+      machineId,
+      checkType: "activation_register",
+      result: "not_started",
+      ipAddress,
+      userAgent
+    });
+
+    return corsResponse({
+      ok: true,
+      activated: false,
+      code: "LICENSE_NOT_STARTED",
+      message: "La licencia aún no inicia vigencia.",
+      checkedAt: nowIso
+    }, 403);
+  }
+
+  const expiresAt = license.expires_at
+    ? new Date(license.expires_at)
+    : null;
+
+  if (
+    expiresAt &&
+    !Number.isNaN(expiresAt.getTime()) &&
+    expiresAt <= now
+  ) {
+    await env.DB.prepare(`
+      UPDATE licenses
+      SET
+        status = 'expired',
+        updated_at = ?
+      WHERE id = ?
+        AND status = 'active'
+    `)
+      .bind(nowIso, license.license_db_id)
+      .run();
+
+    await recordLicenseCheck(env, {
+      licenseId: license.license_id,
+      companyId: license.company_id || null,
+      productId: license.product_id || null,
+      machineId,
+      checkType: "activation_register",
+      result: "expired",
+      ipAddress,
+      userAgent
+    });
+
+    return corsResponse({
+      ok: true,
+      activated: false,
+      code: "LICENSE_EXPIRED",
+      message: "La licencia está vencida.",
+      checkedAt: nowIso
+    }, 403);
+  }
+
+  const existingActivation = await env.DB.prepare(`
+    SELECT
+      id,
+      license_id,
+      product_id,
+      company_id,
+      machine_id,
+      device_label,
+      app_version,
+      status,
+      activated_at,
+      last_check_at
+    FROM license_activations
+    WHERE license_id = ?
+      AND machine_id = ?
+    ORDER BY activated_at DESC
+    LIMIT 1
+  `)
+    .bind(license.license_db_id, machineId)
+    .first();
+
+  if (existingActivation && existingActivation.status === "active") {
+    await env.DB.prepare(`
+      UPDATE license_activations
+      SET
+        last_check_at = ?,
+        app_version = COALESCE(?, app_version),
+        device_label = COALESCE(?, device_label)
+      WHERE id = ?
+    `)
+      .bind(
+        nowIso,
+        appVersion || null,
+        deviceLabel || null,
+        existingActivation.id
+      )
+      .run();
+
+    await recordLicenseCheck(env, {
+      licenseId: license.license_id,
+      companyId: license.company_id || null,
+      productId: license.product_id || null,
+      machineId,
+      checkType: "activation_register",
+      result: "already_activated",
+      ipAddress,
+      userAgent
+    });
+
+    return corsResponse({
+      ok: true,
+      activated: true,
+      code: "DEVICE_ALREADY_ACTIVATED",
+      message: "Este equipo ya estaba activado para la licencia.",
+      checkedAt: nowIso,
+      activation: {
+        id: existingActivation.id,
+        machineId,
+        status: "active",
+        activatedAt: existingActivation.activated_at,
+        lastCheckAt: nowIso
+      },
+      license: {
+        licenseId: license.license_id,
+        licenseName: license.license_name || "",
+        status: license.status,
+        expiresAt: license.expires_at || "",
+        maxDevices: Number(license.max_devices || 1)
+      }
+    });
+  }
+
+  const activationsCount = await env.DB.prepare(`
+    SELECT COUNT(*) AS total
+    FROM license_activations
+    WHERE license_id = ?
+      AND status = 'active'
+  `)
+    .bind(license.license_db_id)
+    .first();
+
+  const activeActivations = Number(activationsCount?.total || 0);
+  const maxDevices = Number(license.max_devices || 1);
+
+  if (activeActivations >= maxDevices) {
+    await recordLicenseCheck(env, {
+      licenseId: license.license_id,
+      companyId: license.company_id || null,
+      productId: license.product_id || null,
+      machineId,
+      checkType: "activation_register",
+      result: "device_limit_reached",
+      ipAddress,
+      userAgent
+    });
+
+    return corsResponse({
+      ok: true,
+      activated: false,
+      code: "DEVICE_LIMIT_REACHED",
+      message: "La licencia alcanzó el límite de dispositivos activos.",
+      checkedAt: nowIso,
+      device: {
+        machineId,
+        activeActivations,
+        maxDevices
+      }
+    }, 409);
+  }
+
+  const activationId = crypto.randomUUID();
+
+  await env.DB.prepare(`
+    INSERT INTO license_activations (
+      id,
+      license_id,
+      product_id,
+      company_id,
+      machine_id,
+      device_label,
+      app_version,
+      status,
+      activated_at,
+      last_check_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+  activationId,
+  license.license_db_id,
+  license.product_id,
+  license.company_id,
+  machineId,
+      deviceLabel || null,
+      appVersion || null,
+      "active",
+      nowIso,
+      nowIso
+    )
+    .run();
+
+  await env.DB.prepare(`
+    UPDATE licenses
+    SET
+      activated_at = COALESCE(activated_at, ?),
+      machine_id = COALESCE(machine_id, ?),
+      updated_at = ?
+    WHERE id = ?
+  `)
+    .bind(
+      nowIso,
+      machineId,
+      nowIso,
+      license.license_db_id
+    )
+    .run();
+
+  await recordLicenseCheck(env, {
+    licenseId: license.license_id,
+    companyId: license.company_id || null,
+    productId: license.product_id || null,
+    machineId,
+    checkType: "activation_register",
+    result: "activation_success",
+    ipAddress,
+    userAgent
+  });
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+  crypto.randomUUID(),
+  "temporary-admin",
+  "license_device_activated",
+      "license_activations",
+      activationId,
+      JSON.stringify({
+        licenseId: license.license_id,
+        licenseDbId: license.license_db_id,
+        companyId: license.company_id || "",
+        companyName: license.company_name || "",
+        productId: license.product_id || "",
+        productName: license.product_name || "",
+        machineId,
+        deviceLabel,
+        appVersion,
+        activeActivations: activeActivations + 1,
+        maxDevices
+      }),
+      nowIso
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    activated: true,
+    code: "DEVICE_ACTIVATED",
+    message: "Equipo activado correctamente.",
+    checkedAt: nowIso,
+    activation: {
+      id: activationId,
+      machineId,
+      deviceLabel,
+      appVersion,
+      status: "active",
+      activatedAt: nowIso,
+      lastCheckAt: nowIso
+    },
+    license: {
+      id: license.license_db_id,
+      licenseId: license.license_id,
+      licenseName: license.license_name || "",
+      status: license.status,
+      startsAt: license.starts_at || "",
+      expiresAt: license.expires_at || "",
+      maxDevices
+    },
+    product: {
+      id: license.product_id,
+      slug: license.product_slug,
+      name: license.product_name
+    },
+    company: {
+      id: license.company_id || "",
+      name: license.company_name || ""
+    }
+  }, 201);
+}
+
 
 
 

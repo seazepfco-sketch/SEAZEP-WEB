@@ -266,6 +266,71 @@ import SectionTitle from "../../components/SectionTitle.astro";
           </table>
         </div>
       </section>
+
+
+     <section class="admin-requests-section license-activations-section">
+        <div class="admin-section-header">
+          <div>
+            <span class="eyebrow">Equipos autorizados</span>
+            <h2>Activaciones por licencia.</h2>
+            <p>
+              Consulte los equipos activados, versión de la aplicación y último check registrado.
+            </p>
+          </div>
+
+          <button class="btn btn-ghost" id="refreshActivationsButton" type="button">
+            Actualizar activaciones
+          </button>
+        </div>
+
+        <div class="admin-filter-panel">
+          <div class="admin-filter-grid">
+            <label class="admin-filter-field">
+              <span>Estado de activación</span>
+              <select class="input" id="activationStatusFilter">
+                <option value="all">Todos</option>
+                <option value="active">Activas</option>
+                <option value="suspended">Suspendidas</option>
+                <option value="expired">Expiradas</option>
+                <option value="revoked">Revocadas</option>
+              </select>
+            </label>
+
+            <label class="admin-filter-field admin-filter-search">
+              <span>Buscar equipo</span>
+              <input
+                class="input"
+                id="activationSearchInput"
+                placeholder="Machine ID, licencia, empresa, software o versión"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Equipo</th>
+                <th>Licencia</th>
+                <th>Empresa</th>
+                <th>Software</th>
+                <th>Estado</th>
+                <th>Fechas</th>
+              </tr>
+            </thead>
+
+            <tbody id="activationsTableBody">
+              <tr>
+                <td colspan="6" class="admin-empty">
+                  Cargue las licencias para ver equipos activados.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
     </section>
   </main>
 
@@ -275,6 +340,7 @@ import SectionTitle from "../../components/SectionTitle.astro";
     const ADMIN_LICENSES_URL = "https://seazep-api.seazepfco.workers.dev/admin/licenses";
     const ADMIN_LICENSE_STATUS_URL = "https://seazep-api.seazepfco.workers.dev/admin/licenses/update-status";
     const ADMIN_COMPANIES_URL = "https://seazep-api.seazepfco.workers.dev/admin/companies";
+     const ADMIN_LICENSE_ACTIVATIONS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-activations";
     const SMARTPOZO360_PRODUCT_ID = "spz-product-smartpozo360";
 
     const adminKeyInput = document.getElementById("adminApiKey");
@@ -298,6 +364,11 @@ import SectionTitle from "../../components/SectionTitle.astro";
     const licenseStatusFilter = document.getElementById("licenseStatusFilter");
     const licenseSearchInput = document.getElementById("licenseSearchInput");
     const licensesTableBody = document.getElementById("licensesTableBody");
+
+    const activationsTableBody = document.getElementById("activationsTableBody");
+    const refreshActivationsButton = document.getElementById("refreshActivationsButton");
+    const activationStatusFilter = document.getElementById("activationStatusFilter");
+    const activationSearchInput = document.getElementById("activationSearchInput");
 
     const summaryTotalLicenses = document.getElementById("summaryTotalLicenses");
     const summaryActiveLicenses = document.getElementById("summaryActiveLicenses");
@@ -350,6 +421,26 @@ import SectionTitle from "../../components/SectionTitle.astro";
         day: "2-digit"
       });
     }
+
+
+        function formatDateTime(value) {
+      if (!value) return "N/D";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) {
+        return value;
+      }
+
+      return date.toLocaleString("es-MX", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
 
     function toIsoStartOfDay(value) {
       if (!value) return "";
@@ -450,6 +541,116 @@ import SectionTitle from "../../components/SectionTitle.astro";
         `;
       }
     }
+
+
+
+         function buildActivationsUrl() {
+      const params = new URLSearchParams();
+
+      params.set("limit", "100");
+
+      const status = String(activationStatusFilter?.value || "all");
+      const search = String(activationSearchInput?.value || "").trim();
+
+      if (status !== "all") {
+        params.set("status", status);
+      }
+
+      if (search) {
+        params.set("search", search);
+      }
+
+      return `${ADMIN_LICENSE_ACTIVATIONS_URL}?${params.toString()}`;
+    }
+
+    function renderActivations(activations = []) {
+      if (!activationsTableBody) return;
+
+      if (!activations.length) {
+        activationsTableBody.innerHTML = `
+          <tr>
+            <td colspan="6" class="admin-empty">
+              No hay equipos activados con esos filtros.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      activationsTableBody.innerHTML = activations.map((activation) => `
+        <tr>
+          <td>
+            <strong>${escapeHtml(activation.machine_id || "Equipo sin ID")}</strong>
+            <small>${escapeHtml(activation.device_label || "Sin etiqueta")}</small>
+            <small>Versión app: ${escapeHtml(activation.app_version || "N/D")}</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(activation.license_code || "Licencia no encontrada")}</strong>
+            <small>${escapeHtml(activation.license_name || "Sin nombre")}</small>
+            <small>Vence: ${escapeHtml(formatDate(activation.license_expires_at))}</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(activation.company_name || "Empresa no encontrada")}</strong>
+            <small>Estado empresa: ${escapeHtml(activation.company_status || "N/D")}</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(activation.product_name || "Software no encontrado")}</strong>
+            <small>${escapeHtml(activation.product_slug || "N/D")}</small>
+          </td>
+
+          <td>
+            <span class="admin-status-pill status-${escapeHtml(activation.status || "active")}">
+              ${escapeHtml(getLicenseStatusLabel(activation.status))}
+            </span>
+          </td>
+
+          <td>
+            <strong>Activado: ${escapeHtml(formatDateTime(activation.activated_at))}</strong>
+            <small>Último check: ${escapeHtml(formatDateTime(activation.last_check_at))}</small>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadActivations() {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus("Ingrese la clave ADM para cargar activaciones.", "error");
+        return;
+      }
+
+      if (refreshActivationsButton) refreshActivationsButton.disabled = true;
+
+      try {
+        const response = await fetch(buildActivationsUrl(), {
+          method: "GET",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey
+          }
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudieron cargar las activaciones.");
+        }
+
+        renderActivations(result.activations || []);
+      } catch (error) {
+        renderActivations([]);
+        setStatus(error.message || "Error al cargar activaciones.", "error");
+      } finally {
+        if (refreshActivationsButton) refreshActivationsButton.disabled = false;
+      }
+    }
+
+
+
 
     function renderLicenses(licenses = []) {
       if (!licensesTableBody) return;
@@ -593,6 +794,9 @@ import SectionTitle from "../../components/SectionTitle.astro";
         renderLicenses(result.licenses || []);
         updateSummary(result.summary || {});
 
+        await loadActivations();
+
+
         setStatus(
           `Licencias cargadas: ${result.count || 0} de ${result.total || 0}`,
           "success"
@@ -730,6 +934,17 @@ import SectionTitle from "../../components/SectionTitle.astro";
 
     loadLicensesButton?.addEventListener("click", loadLicenses);
     refreshLicensesButton?.addEventListener("click", loadLicenses);
+
+     refreshActivationsButton?.addEventListener("click", loadActivations);
+    activationStatusFilter?.addEventListener("change", loadActivations);
+
+    activationSearchInput?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        loadActivations();
+      }
+    });
+
+    
     createLicenseForm?.addEventListener("submit", createLicense);
 
     licenseStatusFilter?.addEventListener("change", loadLicenses);
