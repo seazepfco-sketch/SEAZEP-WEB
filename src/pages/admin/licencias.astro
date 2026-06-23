@@ -332,6 +332,87 @@ import SectionTitle from "../../components/SectionTitle.astro";
         </div>
       </section>
 
+    <section class="admin-requests-section license-checks-section">
+        <div class="admin-section-header">
+          <div>
+            <span class="eyebrow">Historial técnico</span>
+            <h2>Historial de validaciones.</h2>
+            <p>
+              Consulte eventos de validación, activación, bloqueo por límite, suspensión y otros resultados generados por SmartPozo360.
+            </p>
+          </div>
+
+          <button class="btn btn-ghost" id="refreshChecksButton" type="button">
+            Actualizar historial
+          </button>
+        </div>
+
+        <div class="admin-filter-panel">
+          <div class="admin-filter-grid">
+            <label class="admin-filter-field">
+              <span>Tipo de evento</span>
+              <select class="input" id="checkTypeFilter">
+                <option value="all">Todos</option>
+                <option value="license_check">Validación de licencia</option>
+                <option value="activation_register">Registro de activación</option>
+                <option value="admin_activation_status_update">Cambio ADM de equipo</option>
+              </select>
+            </label>
+
+            <label class="admin-filter-field">
+              <span>Resultado</span>
+              <select class="input" id="checkResultFilter">
+                <option value="all">Todos</option>
+                <option value="valid">Válida</option>
+                <option value="requires_activation">Requiere activación</option>
+                <option value="activation_success">Activación exitosa</option>
+                <option value="already_activated">Ya activado</option>
+                <option value="device_limit_reached">Límite de dispositivos</option>
+                <option value="device_suspended">Equipo suspendido</option>
+                <option value="device_revoked">Equipo revocado</option>
+                <option value="suspended">Suspendido ADM</option>
+                <option value="active">Activado ADM</option>
+                <option value="revoked">Revocado ADM</option>
+                <option value="not_found">No encontrado</option>
+              </select>
+            </label>
+
+            <label class="admin-filter-field admin-filter-search">
+              <span>Buscar historial</span>
+              <input
+                class="input"
+                id="checkSearchInput"
+                placeholder="Licencia, equipo, empresa, IP, resultado o navegador"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Licencia</th>
+                <th>Equipo</th>
+                <th>Evento</th>
+                <th>Resultado</th>
+                <th>Empresa / Software</th>
+                <th>Origen</th>
+              </tr>
+            </thead>
+
+            <tbody id="checksTableBody">
+              <tr>
+                <td colspan="7" class="admin-empty">
+                  Cargue las licencias para ver el historial de validaciones.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
     </section>
   </main>
 
@@ -342,7 +423,8 @@ import SectionTitle from "../../components/SectionTitle.astro";
     const ADMIN_LICENSE_STATUS_URL = "https://seazep-api.seazepfco.workers.dev/admin/licenses/update-status";
     const ADMIN_COMPANIES_URL = "https://seazep-api.seazepfco.workers.dev/admin/companies";
     const ADMIN_LICENSE_ACTIVATIONS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-activations";
-     const ADMIN_LICENSE_ACTIVATIONS_UPDATE_STATUS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-activations/update-status";
+    const ADMIN_LICENSE_ACTIVATIONS_UPDATE_STATUS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-activations/update-status";
+    const ADMIN_LICENSE_CHECKS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-checks";
     const SMARTPOZO360_PRODUCT_ID = "spz-product-smartpozo360";
 
     const adminKeyInput = document.getElementById("adminApiKey");
@@ -371,6 +453,12 @@ import SectionTitle from "../../components/SectionTitle.astro";
     const refreshActivationsButton = document.getElementById("refreshActivationsButton");
     const activationStatusFilter = document.getElementById("activationStatusFilter");
     const activationSearchInput = document.getElementById("activationSearchInput");
+
+     const checksTableBody = document.getElementById("checksTableBody");
+    const refreshChecksButton = document.getElementById("refreshChecksButton");
+    const checkTypeFilter = document.getElementById("checkTypeFilter");
+    const checkResultFilter = document.getElementById("checkResultFilter");
+    const checkSearchInput = document.getElementById("checkSearchInput");
 
     const summaryTotalLicenses = document.getElementById("summaryTotalLicenses");
     const summaryActiveLicenses = document.getElementById("summaryActiveLicenses");
@@ -407,6 +495,45 @@ import SectionTitle from "../../components/SectionTitle.astro";
 
       return labels[status] || status || "N/D";
     }
+
+
+
+     function getCheckTypeLabel(type) {
+      const labels = {
+        license_check: "Validación",
+        activation_register: "Activación",
+        admin_activation_status_update: "Cambio ADM"
+      };
+
+      return labels[type] || type || "N/D";
+    }
+
+    function getCheckResultLabel(result) {
+      const labels = {
+        valid: "Válida",
+        requires_activation: "Requiere activación",
+        activation_success: "Activación exitosa",
+        already_activated: "Ya activado",
+        device_limit_reached: "Límite alcanzado",
+        device_suspended: "Equipo suspendido",
+        device_revoked: "Equipo revocado",
+        device_expired: "Equipo expirado",
+        suspended: "Suspendido ADM",
+        active: "Activado ADM",
+        revoked: "Revocado ADM",
+        not_found: "No encontrado",
+        license_not_found: "Licencia no encontrada",
+        company_not_active: "Empresa no activa",
+        product_not_published: "Producto no publicado",
+        expired: "Licencia vencida",
+        not_started: "Licencia no vigente"
+      };
+
+      return labels[result] || result || "N/D";
+    }
+
+
+
 
     function formatDate(value) {
       if (!value) return "N/D";
@@ -684,6 +811,126 @@ import SectionTitle from "../../components/SectionTitle.astro";
     }
 
 
+
+         function buildChecksUrl() {
+      const params = new URLSearchParams();
+
+      params.set("limit", "100");
+
+      const checkType = String(checkTypeFilter?.value || "all");
+      const result = String(checkResultFilter?.value || "all");
+      const search = String(checkSearchInput?.value || "").trim();
+
+      if (checkType !== "all") {
+        params.set("checkType", checkType);
+      }
+
+      if (result !== "all") {
+        params.set("result", result);
+      }
+
+      if (search) {
+        params.set("search", search);
+      }
+
+      return `${ADMIN_LICENSE_CHECKS_URL}?${params.toString()}`;
+    }
+
+    function renderLicenseChecks(checks = []) {
+      if (!checksTableBody) return;
+
+      if (!checks.length) {
+        checksTableBody.innerHTML = `
+          <tr>
+            <td colspan="7" class="admin-empty">
+              No hay eventos de licencia con esos filtros.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      checksTableBody.innerHTML = checks.map((check) => `
+        <tr>
+          <td>
+            <strong>${escapeHtml(formatDateTime(check.checked_at))}</strong>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(check.license_id || "Licencia no encontrada")}</strong>
+            <small>${escapeHtml(check.license_name || "Sin nombre")}</small>
+            <small>Estado licencia: ${escapeHtml(getLicenseStatusLabel(check.license_status))}</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(check.machine_id || "Sin equipo")}</strong>
+            <small>${escapeHtml(check.device_label || "Sin etiqueta")}</small>
+            <small>Activación: ${escapeHtml(getLicenseStatusLabel(check.activation_status))}</small>
+            <small>Versión: ${escapeHtml(check.app_version || "N/D")}</small>
+          </td>
+
+          <td>
+            <span class="admin-status-pill status-${escapeHtml(check.check_type || "default")}">
+              ${escapeHtml(getCheckTypeLabel(check.check_type))}
+            </span>
+            <small>${escapeHtml(check.check_type || "N/D")}</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(getCheckResultLabel(check.result))}</strong>
+            <small>${escapeHtml(check.result || "N/D")}</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(check.company_name || "Empresa no encontrada")}</strong>
+            <small>${escapeHtml(check.product_name || "Software no encontrado")}</small>
+            <small>${escapeHtml(check.product_slug || "N/D")}</small>
+          </td>
+
+          <td>
+            <strong>IP: ${escapeHtml(check.ip_address || "N/D")}</strong>
+            <small>${escapeHtml(String(check.user_agent || "N/D").slice(0, 90))}</small>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadLicenseChecks() {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus("Ingrese la clave ADM para cargar historial de licencias.", "error");
+        return;
+      }
+
+      if (refreshChecksButton) refreshChecksButton.disabled = true;
+
+      try {
+        const response = await fetch(buildChecksUrl(), {
+          method: "GET",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey
+          }
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudo cargar el historial de licencias.");
+        }
+
+        renderLicenseChecks(result.checks || []);
+      } catch (error) {
+        renderLicenseChecks([]);
+        setStatus(error.message || "Error al cargar historial de licencias.", "error");
+      } finally {
+        if (refreshChecksButton) refreshChecksButton.disabled = false;
+      }
+    }
+
+
+
     
      async function updateActivationStatus(activationId, nextStatus, button) {
       const adminKey = getAdminKey();
@@ -895,6 +1142,8 @@ import SectionTitle from "../../components/SectionTitle.astro";
 
         await loadActivations();
 
+        await loadLicenseChecks();
+
 
         setStatus(
           `Licencias cargadas: ${result.count || 0} de ${result.total || 0}`,
@@ -1044,6 +1293,18 @@ import SectionTitle from "../../components/SectionTitle.astro";
     });
 
 
+
+     refreshChecksButton?.addEventListener("click", loadLicenseChecks);
+    checkTypeFilter?.addEventListener("change", loadLicenseChecks);
+    checkResultFilter?.addEventListener("change", loadLicenseChecks);
+
+    checkSearchInput?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        loadLicenseChecks();
+      }
+    });
+
+
     createLicenseForm?.addEventListener("submit", createLicense);
 
     licenseStatusFilter?.addEventListener("change", loadLicenses);
@@ -1101,7 +1362,7 @@ import SectionTitle from "../../components/SectionTitle.astro";
       await updateActivationStatus(activationId, nextStatus, button);
     });
 
-    
+
 
     setDefaultDates();
   </script>

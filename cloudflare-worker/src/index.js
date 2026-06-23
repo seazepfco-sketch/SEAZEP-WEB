@@ -158,7 +158,9 @@ if (url.pathname === "/admin/license-activations/update-status" && request.metho
   return handleAdminUpdateLicenseActivationStatus(request, env);
 }
 
-
+if (url.pathname === "/admin/license-checks" && request.method === "GET") {
+  return handleAdminListLicenseChecks(request, env);
+}
   
 
   
@@ -5129,6 +5131,200 @@ function parsePositiveInteger(value, fallback) {
 
 
 
+
+  async function handleAdminListLicenseChecks(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  const url = new URL(request.url);
+
+  const checkType = cleanText(url.searchParams.get("checkType") || "", 80);
+  const result = cleanText(url.searchParams.get("result") || "", 80);
+  const licenseId = cleanText(url.searchParams.get("licenseId") || "", 120);
+  const machineId = cleanText(url.searchParams.get("machineId") || "", 180);
+  const search = cleanText(url.searchParams.get("search") || "", 120);
+
+  const rawLimit = Number(url.searchParams.get("limit") || 50);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(Math.trunc(rawLimit), 1), 100)
+    : 50;
+
+  const whereParts = [];
+  const params = [];
+
+  if (checkType && checkType !== "all") {
+    whereParts.push("lc.check_type = ?");
+    params.push(checkType);
+  }
+
+  if (result && result !== "all") {
+    whereParts.push("lc.result = ?");
+    params.push(result);
+  }
+
+  if (licenseId) {
+    whereParts.push("lc.license_id = ?");
+    params.push(licenseId);
+  }
+
+  if (machineId) {
+    whereParts.push("lc.machine_id = ?");
+    params.push(machineId);
+  }
+
+  if (search) {
+    const likeSearch = `%${search}%`;
+
+    whereParts.push(`(
+      lc.license_id LIKE ?
+      OR lc.machine_id LIKE ?
+      OR lc.check_type LIKE ?
+      OR lc.result LIKE ?
+      OR lc.ip_address LIKE ?
+      OR lc.user_agent LIKE ?
+      OR c.name LIKE ?
+      OR sp.name LIKE ?
+      OR sp.slug LIKE ?
+      OR l.license_name LIKE ?
+    )`);
+
+    params.push(
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch,
+      likeSearch
+    );
+  }
+
+  const whereSql = whereParts.length
+    ? `WHERE ${whereParts.join(" AND ")}`
+    : "";
+
+  const listSql = `
+    SELECT
+      lc.id,
+      lc.license_id,
+      l.id AS license_db_id,
+      l.license_name,
+      l.status AS license_status,
+      l.expires_at AS license_expires_at,
+      lc.company_id,
+      c.name AS company_name,
+      c.status AS company_status,
+      lc.product_id,
+      sp.slug AS product_slug,
+      sp.name AS product_name,
+      lc.machine_id,
+      la.device_label,
+      la.status AS activation_status,
+      la.app_version,
+      lc.check_type,
+      lc.result,
+      lc.ip_address,
+      lc.user_agent,
+      lc.checked_at
+    FROM license_checks lc
+    LEFT JOIN licenses l ON l.license_id = lc.license_id
+    LEFT JOIN companies c ON c.id = lc.company_id
+    LEFT JOIN software_products sp ON sp.id = lc.product_id
+    LEFT JOIN license_activations la
+      ON la.license_id = l.id
+      AND la.machine_id = lc.machine_id
+    ${whereSql}
+    ORDER BY lc.checked_at DESC
+    LIMIT ${limit}
+  `;
+
+  const countSql = `
+    SELECT COUNT(*) AS total
+    FROM license_checks lc
+    LEFT JOIN licenses l ON l.license_id = lc.license_id
+    LEFT JOIN companies c ON c.id = lc.company_id
+    LEFT JOIN software_products sp ON sp.id = lc.product_id
+    LEFT JOIN license_activations la
+      ON la.license_id = l.id
+      AND la.machine_id = lc.machine_id
+    ${whereSql}
+  `;
+
+  const listStatement = env.DB.prepare(listSql);
+  const countStatement = env.DB.prepare(countSql);
+
+  const listResult = params.length
+    ? await listStatement.bind(...params).all()
+    : await listStatement.all();
+
+  const countResult = params.length
+    ? await countStatement.bind(...params).first()
+    : await countStatement.first();
+
+  const totalAllResult = await env.DB.prepare(`
+    SELECT COUNT(*) AS total
+    FROM license_checks
+  `).first();
+
+  const byTypeResult = await env.DB.prepare(`
+    SELECT
+      COALESCE(check_type, 'unknown') AS check_type,
+      COUNT(*) AS total
+    FROM license_checks
+    GROUP BY COALESCE(check_type, 'unknown')
+  `).all();
+
+  const byResultResult = await env.DB.prepare(`
+    SELECT
+      COALESCE(result, 'unknown') AS result,
+      COUNT(*) AS total
+    FROM license_checks
+    GROUP BY COALESCE(result, 'unknown')
+  `).all();
+
+  const summary = {
+    total: Number(totalAllResult?.total || 0),
+    byType: {},
+    byResult: {}
+  };
+
+  for (const row of byTypeResult.results || []) {
+    summary.byType[row.check_type || "unknown"] = Number(row.total || 0);
+  }
+
+  for (const row of byResultResult.results || []) {
+    summary.byResult[row.result || "unknown"] = Number(row.total || 0);
+  }
+
+  return corsResponse({
+    ok: true,
+    count: (listResult.results || []).length,
+    total: Number(countResult?.total || 0),
+    limit,
+    filters: {
+      checkType: checkType || "all",
+      result: result || "all",
+      licenseId,
+      machineId,
+      search
+    },
+    summary,
+    checks: listResult.results || []
+  });
+}
+
+
+
   
   async function handleLicenseCheck(request, env) {
   let body;
@@ -5872,7 +6068,7 @@ async function recordLicenseCheck(env, data) {
     }, 403);
   }
 
-  
+
 
   const activationsCount = await env.DB.prepare(`
     SELECT COUNT(*) AS total

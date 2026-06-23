@@ -1657,3 +1657,22 @@ sers\azada\Documents\PROYECTOS_SOFTWARE\SEAZEP\SEAZEP-WEB\src\styles\global.css
     min-width: 100%;
   }
 }
+
+
+
+.license-checks-section {
+  margin-top: 28px;
+}
+
+.license-checks-section .admin-filter-panel {
+  margin-top: 18px;
+  margin-bottom: 18px;
+}
+
+.admin-status-pill.status-license_check,
+.admin-status-pill.status-activation_register,
+.admin-status-pill.status-admin_activation_status_update {
+  color: #bae6fd;
+  background: rgba(14, 165, 233, 0.14);
+  border-color: rgba(56, 189, 248, 0.36);
+}
