@@ -452,6 +452,7 @@ import SectionTitle from "../../components/SectionTitle.astro";
   <script>
     const ADMIN_LICENSES_URL = "https://seazep-api.seazepfco.workers.dev/admin/licenses";
     const ADMIN_LICENSE_STATUS_URL = "https://seazep-api.seazepfco.workers.dev/admin/licenses/update-status";
+    const ADMIN_LICENSE_COMMERCIAL_UPDATE_URL = "https://seazep-api.seazepfco.workers.dev/admin/licenses/update-commercial";
     const ADMIN_COMPANIES_URL = "https://seazep-api.seazepfco.workers.dev/admin/companies";
     const ADMIN_LICENSE_ACTIVATIONS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-activations";
     const ADMIN_LICENSE_ACTIVATIONS_UPDATE_STATUS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-activations/update-status";
@@ -1338,6 +1339,39 @@ import SectionTitle from "../../components/SectionTitle.astro";
               >
                 Revocar
               </button>
+
+                  <button
+                class="btn btn-secondary"
+                type="button"
+                data-license-id="${escapeHtml(license.id)}"
+                data-license-code="${escapeHtml(license.license_id || "")}"
+                data-license-name="${escapeHtml(license.license_name || "")}"
+                data-starts-at="${escapeHtml(license.starts_at || "")}"
+                data-expires-at="${escapeHtml(license.expires_at || "")}"
+                data-max-users="${escapeHtml(license.max_users || 1)}"
+                data-max-devices="${escapeHtml(license.max_devices || 1)}"
+                data-notes="${escapeHtml(license.notes || "")}"
+                data-commercial-action="edit-commercial"
+              >
+                Editar comercial
+              </button>
+
+              <button
+                class="btn btn-secondary"
+                type="button"
+                data-license-id="${escapeHtml(license.id)}"
+                data-license-code="${escapeHtml(license.license_id || "")}"
+                data-license-name="${escapeHtml(license.license_name || "")}"
+                data-starts-at="${escapeHtml(license.starts_at || "")}"
+                data-expires-at="${escapeHtml(license.expires_at || "")}"
+                data-max-users="${escapeHtml(license.max_users || 1)}"
+                data-max-devices="${escapeHtml(license.max_devices || 1)}"
+                data-notes="${escapeHtml(license.notes || "")}"
+                data-commercial-action="renew-year"
+              >
+                Renovar +1 año
+              </button>
+
             </div>
           </td>
         </tr>
@@ -1482,6 +1516,220 @@ import SectionTitle from "../../components/SectionTitle.astro";
       }
     }
 
+
+
+     function isoToDateInput(value) {
+      if (!value) return "";
+
+      const date = new Date(value);
+
+      if (Number.isNaN(date.getTime())) {
+        return "";
+      }
+
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+
+      return `${year}-${month}-${day}`;
+    }
+
+    function formatDateInputFromDate(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+
+      return `${year}-${month}-${day}`;
+    }
+
+    function addOneYearToDateInput(value) {
+      const parts = String(value || "").split("-").map((part) => Number(part));
+
+      let date;
+
+      if (parts.length === 3 && parts.every((part) => Number.isFinite(part))) {
+        date = new Date(parts[0], parts[1] - 1, parts[2]);
+      } else {
+        date = new Date();
+      }
+
+      if (Number.isNaN(date.getTime())) {
+        date = new Date();
+      }
+
+      date.setFullYear(date.getFullYear() + 1);
+
+      return formatDateInputFromDate(date);
+    }
+
+    function parsePromptInteger(value, fallback) {
+      const number = Number(value);
+
+      if (!Number.isFinite(number)) {
+        return fallback;
+      }
+
+      const integer = Math.trunc(number);
+
+      if (integer < 1) {
+        return fallback;
+      }
+
+      return integer;
+    }
+
+    async function updateLicenseCommercial(payload, button, successMessage) {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus("Ingrese la clave ADM antes de actualizar datos comerciales.", "error");
+        return;
+      }
+
+      if (!payload.id) {
+        setStatus("Licencia no válida para actualización comercial.", "error");
+        return;
+      }
+
+      if (button) {
+        button.disabled = true;
+      }
+
+      setStatus("Actualizando datos comerciales de la licencia...");
+
+      try {
+        const response = await fetch(ADMIN_LICENSE_COMMERCIAL_UPDATE_URL, {
+          method: "POST",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey,
+            "content-type": "text/plain;charset=UTF-8"
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudieron actualizar los datos comerciales.");
+        }
+
+        setStatus(successMessage || result.message || "Datos comerciales actualizados correctamente.", "success");
+        await loadLicenses();
+      } catch (error) {
+        setStatus(error.message || "Error al actualizar datos comerciales.", "error");
+      } finally {
+        if (button) {
+          button.disabled = false;
+        }
+      }
+    }
+
+    async function editLicenseCommercialFromButton(button) {
+      const licenseId = button.dataset.licenseId || "";
+      const licenseCode = button.dataset.licenseCode || "";
+      const currentName = button.dataset.licenseName || "";
+      const currentStartsAt = isoToDateInput(button.dataset.startsAt || "");
+      const currentExpiresAt = isoToDateInput(button.dataset.expiresAt || "");
+      const currentMaxUsers = button.dataset.maxUsers || "1";
+      const currentMaxDevices = button.dataset.maxDevices || "1";
+      const currentNotes = button.dataset.notes || "";
+
+      const licenseName = window.prompt(
+        `Nombre comercial de la licencia ${licenseCode}:`,
+        currentName
+      );
+
+      if (licenseName === null) return;
+
+      const startsAtInput = window.prompt(
+        "Fecha de inicio en formato YYYY-MM-DD:",
+        currentStartsAt
+      );
+
+      if (startsAtInput === null) return;
+
+      const expiresAtInput = window.prompt(
+        "Fecha de vencimiento en formato YYYY-MM-DD:",
+        currentExpiresAt
+      );
+
+      if (expiresAtInput === null) return;
+
+      const maxUsersInput = window.prompt(
+        "Máximo de usuarios permitidos:",
+        currentMaxUsers
+      );
+
+      if (maxUsersInput === null) return;
+
+      const maxDevicesInput = window.prompt(
+        "Máximo de dispositivos permitidos:",
+        currentMaxDevices
+      );
+
+      if (maxDevicesInput === null) return;
+
+      const notes = window.prompt(
+        "Nota comercial o administrativa del cambio:",
+        currentNotes || "Actualización comercial desde panel ADM."
+      );
+
+      if (notes === null) return;
+
+      const payload = {
+        id: licenseId,
+        licenseName: String(licenseName || "").trim(),
+        startsAt: startsAtInput ? toIsoStartOfDay(String(startsAtInput).trim()) : "",
+        expiresAt: expiresAtInput ? toIsoEndOfDay(String(expiresAtInput).trim()) : "",
+        maxUsers: parsePromptInteger(maxUsersInput, Number(currentMaxUsers || 1)),
+        maxDevices: parsePromptInteger(maxDevicesInput, Number(currentMaxDevices || 1)),
+        notes: String(notes || "").trim()
+      };
+
+      await updateLicenseCommercial(
+        payload,
+        button,
+        `Licencia ${licenseCode} actualizada comercialmente.`
+      );
+    }
+
+    async function renewLicenseOneYearFromButton(button) {
+      const licenseId = button.dataset.licenseId || "";
+      const licenseCode = button.dataset.licenseCode || "";
+      const currentExpiresAt = isoToDateInput(button.dataset.expiresAt || "");
+      const proposedExpiresAt = addOneYearToDateInput(currentExpiresAt);
+
+      const expiresAtInput = window.prompt(
+        `Nueva fecha de vencimiento para renovar ${licenseCode} por 1 año:`,
+        proposedExpiresAt
+      );
+
+      if (expiresAtInput === null) return;
+
+      const notes = window.prompt(
+        "Nota de renovación:",
+        `Renovación comercial de la licencia ${licenseCode} por 1 año desde panel ADM.`
+      );
+
+      if (notes === null) return;
+
+      const payload = {
+        id: licenseId,
+        expiresAt: toIsoEndOfDay(String(expiresAtInput || proposedExpiresAt).trim()),
+        notes: String(notes || "").trim()
+      };
+
+      await updateLicenseCommercial(
+        payload,
+        button,
+        `Licencia ${licenseCode} renovada correctamente.`
+      );
+    }
+
+
+
+
     async function updateLicenseStatus(licenseId, nextStatus, button) {
       const adminKey = getAdminKey();
 
@@ -1591,7 +1839,8 @@ import SectionTitle from "../../components/SectionTitle.astro";
       loadLicenses();
     });
 
-    licensesTableBody?.addEventListener("click", async (event) => {
+    
+        licensesTableBody?.addEventListener("click", async (event) => {
       const target = event.target;
 
       if (!(target instanceof Element)) {
@@ -1604,11 +1853,25 @@ import SectionTitle from "../../components/SectionTitle.astro";
         return;
       }
 
+      const commercialAction = button.dataset.commercialAction || "";
       const licenseId = button.dataset.licenseId || "";
       const nextStatus = button.dataset.nextStatus || "";
 
-      await updateLicenseStatus(licenseId, nextStatus, button);
+      if (commercialAction === "edit-commercial") {
+        await editLicenseCommercialFromButton(button);
+        return;
+      }
+
+      if (commercialAction === "renew-year") {
+        await renewLicenseOneYearFromButton(button);
+        return;
+      }
+
+      if (nextStatus) {
+        await updateLicenseStatus(licenseId, nextStatus, button);
+      }
     });
+    
 
 
      activationsTableBody?.addEventListener("click", async (event) => {
