@@ -149,6 +149,62 @@ import SectionTitle from "../../components/SectionTitle.astro";
         </article>
       </div>
 
+
+
+       <section class="admin-filter-panel admin-license-overview-panel">
+        <div class="admin-filter-header">
+          <div>
+            <span class="eyebrow">SmartPozo360</span>
+            <h3>Resumen ejecutivo de licencias</h3>
+            <p>
+              Vista rápida del estado comercial y técnico de licencias, equipos activados y validaciones recientes.
+            </p>
+          </div>
+
+          <a class="btn btn-ghost" href="/admin/licencias">
+            Ver licencias
+          </a>
+        </div>
+
+        <div class="admin-summary-grid license-executive-grid">
+          <article class="admin-summary-card">
+            <span>Licencias activas</span>
+            <strong id="licenseOverviewActive">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Equipos activados</span>
+            <strong id="licenseOverviewDevices">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Equipos suspendidos</span>
+            <strong id="licenseOverviewSuspended">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Equipos revocados</span>
+            <strong id="licenseOverviewRevoked">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Checks recientes</span>
+            <strong id="licenseOverviewChecks">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Bloqueos por límite</span>
+            <strong id="licenseOverviewLimitBlocks">0</strong>
+          </article>
+        </div>
+
+        <p id="licenseOverviewStatus" class="form-status" aria-live="polite"></p>
+      </section>
+
+
+
+
+
       <section class="admin-requests-section">
         <div class="admin-section-header">
           <div>
@@ -208,10 +264,14 @@ import SectionTitle from "../../components/SectionTitle.astro";
   <Footer />
 
   <script>
-    const ADMIN_REQUESTS_BASE_URL = "https://seazep-api.seazepfco.workers.dev/admin/requests";
+const ADMIN_REQUESTS_BASE_URL = "https://seazep-api.seazepfco.workers.dev/admin/requests";
 const ADMIN_UPDATE_STATUS_URL = "https://seazep-api.seazepfco.workers.dev/admin/requests/update-status";
 const ADMIN_REQUEST_NOTES_URL = "https://seazep-api.seazepfco.workers.dev/admin/requests/notes";
 const ADMIN_CONVERT_REQUEST_TO_COMPANY_URL = "https://seazep-api.seazepfco.workers.dev/admin/requests/convert-to-company";
+
+const ADMIN_LICENSES_URL = "https://seazep-api.seazepfco.workers.dev/admin/licenses";
+const ADMIN_LICENSE_ACTIVATIONS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-activations";
+const ADMIN_LICENSE_CHECKS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-checks";
 
 
 
@@ -219,6 +279,15 @@ const ADMIN_CONVERT_REQUEST_TO_COMPANY_URL = "https://seazep-api.seazepfco.worke
     const loadButton = document.getElementById("loadRequestsButton");
     const refreshButton = document.getElementById("refreshRequestsButton");
     const statusEl = document.getElementById("adminStatus");
+
+    const licenseOverviewActive = document.getElementById("licenseOverviewActive");
+    const licenseOverviewDevices = document.getElementById("licenseOverviewDevices");
+    const licenseOverviewSuspended = document.getElementById("licenseOverviewSuspended");
+    const licenseOverviewRevoked = document.getElementById("licenseOverviewRevoked");
+    const licenseOverviewChecks = document.getElementById("licenseOverviewChecks");
+    const licenseOverviewLimitBlocks = document.getElementById("licenseOverviewLimitBlocks");
+    const licenseOverviewStatus = document.getElementById("licenseOverviewStatus");
+
     const tableBody = document.getElementById("requestsTableBody");
     const totalRequestsEl = document.getElementById("totalRequests");
     const newRequestsEl = document.getElementById("newRequests");
@@ -665,6 +734,126 @@ async function updateRequestStatus(id, status) {
 
 
 
+   function setLicenseOverviewStatus(message, type = "") {
+      if (!licenseOverviewStatus) return;
+
+      licenseOverviewStatus.textContent = message;
+      licenseOverviewStatus.className = type ? `form-status ${type}` : "form-status";
+    }
+
+    function setLicenseOverviewValues(values = {}) {
+      if (licenseOverviewActive) {
+        licenseOverviewActive.textContent = String(values.activeLicenses || 0);
+      }
+
+      if (licenseOverviewDevices) {
+        licenseOverviewDevices.textContent = String(values.activeDevices || 0);
+      }
+
+      if (licenseOverviewSuspended) {
+        licenseOverviewSuspended.textContent = String(values.suspendedDevices || 0);
+      }
+
+      if (licenseOverviewRevoked) {
+        licenseOverviewRevoked.textContent = String(values.revokedDevices || 0);
+      }
+
+      if (licenseOverviewChecks) {
+        licenseOverviewChecks.textContent = String(values.recentChecks || 0);
+      }
+
+      if (licenseOverviewLimitBlocks) {
+        licenseOverviewLimitBlocks.textContent = String(values.limitBlocks || 0);
+      }
+    }
+
+    async function loadLicenseOverview() {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setLicenseOverviewStatus("Ingrese la clave ADM para cargar resumen de licencias.", "error");
+        return;
+      }
+
+      try {
+        setLicenseOverviewStatus("Cargando resumen de licencias...");
+
+        const [licensesResponse, activationsResponse, checksResponse, limitBlocksResponse] = await Promise.all([
+          fetch(`${ADMIN_LICENSES_URL}?limit=100`, {
+            method: "GET",
+            mode: "cors",
+            headers: {
+              "x-admin-key": adminKey
+            }
+          }),
+          fetch(`${ADMIN_LICENSE_ACTIVATIONS_URL}?limit=100`, {
+            method: "GET",
+            mode: "cors",
+            headers: {
+              "x-admin-key": adminKey
+            }
+          }),
+          fetch(`${ADMIN_LICENSE_CHECKS_URL}?limit=100`, {
+            method: "GET",
+            mode: "cors",
+            headers: {
+              "x-admin-key": adminKey
+            }
+          }),
+          fetch(`${ADMIN_LICENSE_CHECKS_URL}?result=device_limit_reached&limit=100`, {
+            method: "GET",
+            mode: "cors",
+            headers: {
+              "x-admin-key": adminKey
+            }
+          })
+        ]);
+
+        const licensesResult = await licensesResponse.json();
+        const activationsResult = await activationsResponse.json();
+        const checksResult = await checksResponse.json();
+        const limitBlocksResult = await limitBlocksResponse.json();
+
+        if (!licensesResponse.ok || !licensesResult.ok) {
+          throw new Error(licensesResult.message || "No se pudo cargar licencias.");
+        }
+
+        if (!activationsResponse.ok || !activationsResult.ok) {
+          throw new Error(activationsResult.message || "No se pudo cargar activaciones.");
+        }
+
+        if (!checksResponse.ok || !checksResult.ok) {
+          throw new Error(checksResult.message || "No se pudo cargar historial de checks.");
+        }
+
+        if (!limitBlocksResponse.ok || !limitBlocksResult.ok) {
+          throw new Error(limitBlocksResult.message || "No se pudo cargar bloqueos por límite.");
+        }
+
+        const activations = activationsResult.activations || [];
+
+        const activeDevices = activations.filter((item) => item.status === "active").length;
+        const suspendedDevices = activations.filter((item) => item.status === "suspended").length;
+        const revokedDevices = activations.filter((item) => item.status === "revoked").length;
+
+        setLicenseOverviewValues({
+          activeLicenses: licensesResult.summary?.active || 0,
+          activeDevices,
+          suspendedDevices,
+          revokedDevices,
+          recentChecks: checksResult.total || checksResult.count || 0,
+          limitBlocks: limitBlocksResult.total || limitBlocksResult.count || 0
+        });
+
+        setLicenseOverviewStatus("Resumen de licencias actualizado.", "success");
+      } catch (error) {
+        setLicenseOverviewValues({});
+        setLicenseOverviewStatus(error.message || "Error al cargar resumen de licencias.", "error");
+      }
+    }
+
+
+
 
     async function loadRequests() {
   if (!keyInput) return;
@@ -741,6 +930,12 @@ async function updateRequestStatus(id, status) {
 }
 
 
+async function loadAdminDashboardData() {
+  await loadRequests();
+  await loadLicenseOverview();
+}
+
+
 
 statusFilter?.addEventListener("change", loadRequests);
 interestFilter?.addEventListener("change", loadRequests);
@@ -759,8 +954,8 @@ clearFiltersButton?.addEventListener("click", () => {
   loadRequests();
 });
 
-    loadButton?.addEventListener("click", loadRequests);
-    refreshButton?.addEventListener("click", loadRequests);
+    loadButton?.addEventListener("click", loadAdminDashboardData);
+    refreshButton?.addEventListener("click", loadAdminDashboardData);
 
 
     tableBody?.addEventListener("click", async (event) => {
