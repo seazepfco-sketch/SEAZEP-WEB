@@ -230,6 +230,37 @@ import SectionTitle from "../../components/SectionTitle.astro";
         </div>
       </section>
 
+
+
+       <section class="admin-filter-panel license-export-panel">
+        <div class="admin-filter-header">
+          <div>
+            <span class="eyebrow">Reportes ADM</span>
+            <h3>Exportar información de licencias</h3>
+            <p>
+              Descargue reportes CSV para control comercial, técnico y administrativo de SmartPozo360.
+            </p>
+          </div>
+        </div>
+
+        <div class="license-export-actions">
+          <button class="btn btn-ghost" id="exportLicensesButton" type="button">
+            Descargar licencias CSV
+          </button>
+
+          <button class="btn btn-ghost" id="exportActivationsButton" type="button">
+            Descargar activaciones CSV
+          </button>
+
+          <button class="btn btn-ghost" id="exportChecksButton" type="button">
+            Descargar historial CSV
+          </button>
+        </div>
+
+        <p id="licenseExportStatus" class="form-status" aria-live="polite"></p>
+      </section>
+
+
       <section class="admin-requests-section">
         <div class="admin-section-header">
           <div>
@@ -459,6 +490,12 @@ import SectionTitle from "../../components/SectionTitle.astro";
     const checkTypeFilter = document.getElementById("checkTypeFilter");
     const checkResultFilter = document.getElementById("checkResultFilter");
     const checkSearchInput = document.getElementById("checkSearchInput");
+
+    const exportLicensesButton = document.getElementById("exportLicensesButton");
+    const exportActivationsButton = document.getElementById("exportActivationsButton");
+    const exportChecksButton = document.getElementById("exportChecksButton");
+    const licenseExportStatus = document.getElementById("licenseExportStatus");
+
 
     const summaryTotalLicenses = document.getElementById("summaryTotalLicenses");
     const summaryActiveLicenses = document.getElementById("summaryActiveLicenses");
@@ -998,6 +1035,231 @@ import SectionTitle from "../../components/SectionTitle.astro";
 
 
 
+     function setExportStatus(message, type = "") {
+      if (!licenseExportStatus) return;
+
+      licenseExportStatus.textContent = message;
+      licenseExportStatus.className = type ? `form-status ${type}` : "form-status";
+    }
+
+    function csvValue(value) {
+      const text = String(value ?? "")
+        .replaceAll("\r", " ")
+        .replaceAll("\n", " ")
+        .trim();
+
+      return `"${text.replaceAll('"', '""')}"`;
+    }
+
+    function buildCsv(headers = [], rows = []) {
+      const headerLine = headers.map(csvValue).join(",");
+      const rowLines = rows.map((row) => {
+        return headers.map((header) => csvValue(row[header])).join(",");
+      });
+
+      return [headerLine, ...rowLines].join("\n");
+    }
+
+    function downloadCsv(filename, csvContent) {
+      const blob = new Blob([`\uFEFF${csvContent}`], {
+        type: "text/csv;charset=utf-8;"
+      });
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+
+    function getReportDateSuffix() {
+      const now = new Date();
+
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const day = String(now.getDate()).padStart(2, "0");
+      const hour = String(now.getHours()).padStart(2, "0");
+      const minute = String(now.getMinutes()).padStart(2, "0");
+
+      return `${year}-${month}-${day}_${hour}-${minute}`;
+    }
+
+    async function fetchAdminReport(url) {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        throw new Error("Ingrese la clave ADM antes de descargar reportes.");
+      }
+
+      const response = await fetch(url, {
+        method: "GET",
+        mode: "cors",
+        headers: {
+          "x-admin-key": adminKey
+        }
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.ok) {
+        throw new Error(result.message || "No se pudo descargar el reporte.");
+      }
+
+      return result;
+    }
+
+
+
+     async function exportLicensesCsv() {
+      try {
+        setExportStatus("Preparando reporte de licencias...");
+
+        const result = await fetchAdminReport(`${ADMIN_LICENSES_URL}?limit=100`);
+        const licenses = result.licenses || [];
+
+        const headers = [
+          "license_code",
+          "license_name",
+          "company_name",
+          "product_name",
+          "status",
+          "starts_at",
+          "expires_at",
+          "max_users",
+          "max_devices",
+          "created_at",
+          "updated_at"
+        ];
+
+        const rows = licenses.map((item) => ({
+          license_code: item.license_id || item.license_code || "",
+          license_name: item.license_name || "",
+          company_name: item.company_name || "",
+          product_name: item.product_name || "",
+          status: item.status || "",
+          starts_at: item.starts_at || "",
+          expires_at: item.expires_at || "",
+          max_users: item.max_users || "",
+          max_devices: item.max_devices || "",
+          created_at: item.created_at || "",
+          updated_at: item.updated_at || ""
+        }));
+
+        const csv = buildCsv(headers, rows);
+
+        downloadCsv(`seazep_licencias_${getReportDateSuffix()}.csv`, csv);
+        setExportStatus(`Reporte de licencias descargado: ${rows.length} registro(s).`, "success");
+      } catch (error) {
+        setExportStatus(error.message || "Error al exportar licencias.", "error");
+      }
+    }
+
+
+
+
+     async function exportActivationsCsv() {
+      try {
+        setExportStatus("Preparando reporte de activaciones...");
+
+        const result = await fetchAdminReport(`${ADMIN_LICENSE_ACTIVATIONS_URL}?limit=100`);
+        const activations = result.activations || [];
+
+        const headers = [
+          "activation_id",
+          "license_code",
+          "license_name",
+          "company_name",
+          "product_name",
+          "machine_id",
+          "device_label",
+          "app_version",
+          "status",
+          "activated_at",
+          "last_check_at"
+        ];
+
+        const rows = activations.map((item) => ({
+          activation_id: item.id || "",
+          license_code: item.license_code || "",
+          license_name: item.license_name || "",
+          company_name: item.company_name || "",
+          product_name: item.product_name || "",
+          machine_id: item.machine_id || "",
+          device_label: item.device_label || "",
+          app_version: item.app_version || "",
+          status: item.status || "",
+          activated_at: item.activated_at || "",
+          last_check_at: item.last_check_at || ""
+        }));
+
+        const csv = buildCsv(headers, rows);
+
+        downloadCsv(`seazep_activaciones_${getReportDateSuffix()}.csv`, csv);
+        setExportStatus(`Reporte de activaciones descargado: ${rows.length} registro(s).`, "success");
+      } catch (error) {
+        setExportStatus(error.message || "Error al exportar activaciones.", "error");
+      }
+    }
+
+
+
+    async function exportChecksCsv() {
+      try {
+        setExportStatus("Preparando reporte de historial de checks...");
+
+        const result = await fetchAdminReport(`${ADMIN_LICENSE_CHECKS_URL}?limit=100`);
+        const checks = result.checks || [];
+
+        const headers = [
+          "checked_at",
+          "license_id",
+          "license_name",
+          "company_name",
+          "product_name",
+          "machine_id",
+          "device_label",
+          "activation_status",
+          "app_version",
+          "check_type",
+          "result",
+          "ip_address",
+          "user_agent"
+        ];
+
+        const rows = checks.map((item) => ({
+          checked_at: item.checked_at || "",
+          license_id: item.license_id || "",
+          license_name: item.license_name || "",
+          company_name: item.company_name || "",
+          product_name: item.product_name || "",
+          machine_id: item.machine_id || "",
+          device_label: item.device_label || "",
+          activation_status: item.activation_status || "",
+          app_version: item.app_version || "",
+          check_type: item.check_type || "",
+          result: item.result || "",
+          ip_address: item.ip_address || "",
+          user_agent: item.user_agent || ""
+        }));
+
+        const csv = buildCsv(headers, rows);
+
+        downloadCsv(`seazep_historial_checks_${getReportDateSuffix()}.csv`, csv);
+        setExportStatus(`Reporte de historial descargado: ${rows.length} registro(s).`, "success");
+      } catch (error) {
+        setExportStatus(error.message || "Error al exportar historial.", "error");
+      }
+    }
+
+
+
+
+
     function renderLicenses(licenses = []) {
       if (!licensesTableBody) return;
 
@@ -1303,6 +1565,12 @@ import SectionTitle from "../../components/SectionTitle.astro";
         loadLicenseChecks();
       }
     });
+
+
+
+    exportLicensesButton?.addEventListener("click", exportLicensesCsv);
+    exportActivationsButton?.addEventListener("click", exportActivationsCsv);
+    exportChecksButton?.addEventListener("click", exportChecksCsv);
 
 
     createLicenseForm?.addEventListener("submit", createLicense);
