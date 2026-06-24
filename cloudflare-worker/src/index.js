@@ -172,6 +172,15 @@ if (url.pathname === "/admin/license-checks" && request.method === "GET") {
   if (url.pathname === "/admin/license-audit" && request.method === "GET") {
   return handleAdminListLicenseAudit(request, env);
 }
+
+
+  if (url.pathname === "/admin/license-alerts" && request.method === "GET") {
+  return handleAdminListLicenseAlerts(request, env);
+}
+
+if (url.pathname === "/admin/license-alerts/send" && request.method === "POST") {
+  return handleAdminSendLicenseAlertsEmail(request, env);
+}
   
 
   
@@ -5608,12 +5617,14 @@ function parsePositiveInteger(value, fallback) {
   const whereParts = [];
   const params = [];
 
-  const licenseAuditActions = [
+   const licenseAuditActions = [
     "admin_license_created",
     "admin_license_status_updated",
     "admin_license_commercial_updated",
     "admin_license_activation_status_updated",
-    "license_device_activated"
+    "license_device_activated",
+    "admin_license_alert_email_sent",
+    "admin_license_alert_email_failed"
   ];
 
   const actionPlaceholders = licenseAuditActions.map(() => "?").join(", ");
@@ -5748,6 +5759,521 @@ function parsePositiveInteger(value, fallback) {
     audits
   });
 }
+
+
+
+
+
+  async function handleAdminListLicenseAlerts(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  const url = new URL(request.url);
+
+  const rawDays = Number(url.searchParams.get("days") || 30);
+  const days = Number.isFinite(rawDays)
+    ? Math.min(Math.max(Math.trunc(rawDays), 1), 365)
+    : 30;
+
+  const rawLimit = Number(url.searchParams.get("limit") || 100);
+  const limit = Number.isFinite(rawLimit)
+    ? Math.min(Math.max(Math.trunc(rawLimit), 1), 300)
+    : 100;
+
+  const data = await getLicenseAlertsData(env, {
+    days,
+    limit
+  });
+
+  return corsResponse({
+    ok: true,
+    ...data
+  });
+}
+
+async function handleAdminSendLicenseAlertsEmail(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  let body = {};
+
+  try {
+    body = await request.json();
+  } catch {
+    body = {};
+  }
+
+  const rawDays = Number(body.days || 30);
+  const days = Number.isFinite(rawDays)
+    ? Math.min(Math.max(Math.trunc(rawDays), 1), 365)
+    : 30;
+
+  const recipient = normalizeAuthEmail(body.to || env.NOTIFY_TO_EMAIL || "seazepfco@gmail.com");
+
+  if (!recipient || !isValidEmail(recipient)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_RECIPIENT",
+      message: "El correo destino para alertas no es válido."
+    }, 400);
+  }
+
+  const resendApiKey = String(env.RESEND_API_KEY || "").trim();
+
+  if (!resendApiKey) {
+    return corsResponse({
+      ok: false,
+      code: "RESEND_NOT_CONFIGURED",
+      message: "RESEND_API_KEY no está configurada en el Worker."
+    }, 500);
+  }
+
+  const data = await getLicenseAlertsData(env, {
+    days,
+    limit: 100
+  });
+
+  const now = new Date().toISOString();
+  const fromEmail = String(env.RESEND_FROM_EMAIL || "SEAZEP <onboarding@resend.dev>").trim();
+
+  const subject = buildLicenseAlertsEmailSubject(data);
+  const html = buildLicenseAlertsEmailHtml(data);
+  const text = buildLicenseAlertsEmailText(data);
+
+  let resendResult = {};
+  let emailOk = false;
+  let emailError = "";
+
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "authorization": `Bearer ${resendApiKey}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        from: fromEmail,
+        to: [recipient],
+        subject,
+        html,
+        text
+      })
+    });
+
+    resendResult = await response.json().catch(() => ({}));
+    emailOk = response.ok;
+
+    if (!response.ok) {
+      emailError = resendResult.message || `Resend respondió con estado ${response.status}`;
+    }
+  } catch (error) {
+    emailOk = false;
+    emailError = error.message || "Error desconocido al enviar alerta.";
+  }
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      "temporary-admin",
+      emailOk ? "admin_license_alert_email_sent" : "admin_license_alert_email_failed",
+      "licenses",
+      "license_alerts",
+      JSON.stringify({
+        recipient,
+        days,
+        riskLevel: data.risk.level,
+        riskLabel: data.risk.label,
+        summary: data.summary,
+        resendEmailId: resendResult.id || null,
+        error: emailError || null
+      }),
+      now
+    )
+    .run();
+
+  if (!emailOk) {
+    return corsResponse({
+      ok: false,
+      code: "EMAIL_SEND_FAILED",
+      message: emailError || "No se pudo enviar el correo de alertas.",
+      summary: data.summary
+    }, 502);
+  }
+
+  return corsResponse({
+    ok: true,
+    message: "Correo de alertas de licencias enviado correctamente.",
+    recipient,
+    resendEmailId: resendResult.id || null,
+    sentAt: now,
+    summary: data.summary,
+    risk: data.risk
+  });
+}
+
+async function getLicenseAlertsData(env, options = {}) {
+  const days = Number(options.days || 30);
+  const limit = Number(options.limit || 100);
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const warningLimit = new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
+
+  const licensesResult = await env.DB.prepare(`
+    SELECT
+      l.id,
+      l.company_id,
+      c.name AS company_name,
+      c.status AS company_status,
+      l.product_id,
+      sp.slug AS product_slug,
+      sp.name AS product_name,
+      l.license_id,
+      l.license_name,
+      l.status,
+      l.starts_at,
+      l.expires_at,
+      l.max_users,
+      l.max_devices,
+      l.created_at,
+      l.updated_at
+    FROM licenses l
+    LEFT JOIN companies c ON c.id = l.company_id
+    LEFT JOIN software_products sp ON sp.id = l.product_id
+    ORDER BY COALESCE(l.expires_at, l.updated_at, l.created_at) ASC
+    LIMIT ${limit}
+  `).all();
+
+  const activationsResult = await env.DB.prepare(`
+    SELECT
+      la.id,
+      la.license_id AS license_db_id,
+      l.license_id AS license_code,
+      l.license_name,
+      la.company_id,
+      c.name AS company_name,
+      c.status AS company_status,
+      la.product_id,
+      sp.name AS product_name,
+      la.machine_id,
+      la.device_label,
+      la.app_version,
+      la.status,
+      la.activated_at,
+      la.last_check_at
+    FROM license_activations la
+    LEFT JOIN licenses l ON l.id = la.license_id
+    LEFT JOIN companies c ON c.id = la.company_id
+    LEFT JOIN software_products sp ON sp.id = la.product_id
+    WHERE la.status IN ('suspended', 'revoked', 'expired')
+    ORDER BY COALESCE(la.last_check_at, la.activated_at) DESC
+    LIMIT ${limit}
+  `).all();
+
+  const limitBlocksResult = await env.DB.prepare(`
+    SELECT
+      lc.id,
+      lc.license_id,
+      l.id AS license_db_id,
+      l.license_name,
+      lc.company_id,
+      c.name AS company_name,
+      c.status AS company_status,
+      lc.product_id,
+      sp.name AS product_name,
+      lc.machine_id,
+      lc.check_type,
+      lc.result,
+      lc.ip_address,
+      lc.user_agent,
+      lc.checked_at
+    FROM license_checks lc
+    LEFT JOIN licenses l ON l.license_id = lc.license_id
+    LEFT JOIN companies c ON c.id = lc.company_id
+    LEFT JOIN software_products sp ON sp.id = lc.product_id
+    WHERE lc.result = 'device_limit_reached'
+    ORDER BY lc.checked_at DESC
+    LIMIT ${limit}
+  `).all();
+
+  const licenses = licensesResult.results || [];
+  const activations = activationsResult.results || [];
+  const limitBlocks = limitBlocksResult.results || [];
+
+  const expiringLicenses = licenses.filter((license) => {
+    const expiresAt = license.expires_at || "";
+
+    if (!expiresAt) return false;
+
+    const status = license.status || "active";
+
+    return status === "active" && expiresAt > nowIso && expiresAt <= warningLimit;
+  });
+
+  const expiredLicenses = licenses.filter((license) => {
+    const expiresAt = license.expires_at || "";
+    const status = license.status || "active";
+
+    return status === "expired" || Boolean(expiresAt && expiresAt <= nowIso);
+  });
+
+  const suspendedLicenses = licenses.filter((license) => license.status === "suspended");
+  const revokedLicenses = licenses.filter((license) => license.status === "revoked");
+  const suspendedDevices = activations.filter((activation) => activation.status === "suspended");
+  const revokedDevices = activations.filter((activation) => activation.status === "revoked");
+  const expiredDevices = activations.filter((activation) => activation.status === "expired");
+
+  const summary = {
+    days,
+    totalLicenses: licenses.length,
+    expiringLicenses: expiringLicenses.length,
+    expiredLicenses: expiredLicenses.length,
+    suspendedLicenses: suspendedLicenses.length,
+    revokedLicenses: revokedLicenses.length,
+    suspendedDevices: suspendedDevices.length,
+    revokedDevices: revokedDevices.length,
+    expiredDevices: expiredDevices.length,
+    deviceLimitBlocks: limitBlocks.length
+  };
+
+  const risk = getLicenseAlertsRisk(summary);
+
+  return {
+    generatedAt: nowIso,
+    window: {
+      days,
+      from: nowIso,
+      to: warningLimit
+    },
+    risk,
+    summary,
+    alerts: {
+      expiringLicenses,
+      expiredLicenses,
+      suspendedLicenses,
+      revokedLicenses,
+      suspendedDevices,
+      revokedDevices,
+      expiredDevices,
+      deviceLimitBlocks: limitBlocks
+    }
+  };
+}
+
+function getLicenseAlertsRisk(summary = {}) {
+  if (
+    Number(summary.expiredLicenses || 0) > 0 ||
+    Number(summary.revokedLicenses || 0) > 0 ||
+    Number(summary.revokedDevices || 0) > 0
+  ) {
+    return {
+      level: "critical",
+      label: "Crítico",
+      message: "Existen licencias vencidas, revocadas o equipos revocados."
+    };
+  }
+
+  if (
+    Number(summary.expiringLicenses || 0) > 0 ||
+    Number(summary.suspendedLicenses || 0) > 0 ||
+    Number(summary.suspendedDevices || 0) > 0 ||
+    Number(summary.deviceLimitBlocks || 0) > 0
+  ) {
+    return {
+      level: "warning",
+      label: "Atención",
+      message: "Existen licencias próximas a vencer, suspensiones o bloqueos por límite."
+    };
+  }
+
+  return {
+    level: "ok",
+    label: "Correcto",
+    message: "No se detectan alertas comerciales o técnicas principales."
+  };
+}
+
+function buildLicenseAlertsEmailSubject(data = {}) {
+  const risk = data.risk || {};
+  const summary = data.summary || {};
+
+  if (risk.level === "critical") {
+    return `SEAZEP ADM — Alerta crítica de licencias (${summary.expiredLicenses || 0} vencidas)`;
+  }
+
+  if (risk.level === "warning") {
+    return `SEAZEP ADM — Alertas de licencias por revisar (${summary.expiringLicenses || 0} por vencer)`;
+  }
+
+  return "SEAZEP ADM — Reporte de licencias sin alertas críticas";
+}
+
+function buildLicenseAlertsEmailHtml(data = {}) {
+  const summary = data.summary || {};
+  const alerts = data.alerts || {};
+  const risk = data.risk || {};
+
+  return `
+    <div style="font-family:Arial,sans-serif;background:#f4f8fb;padding:24px;color:#0f172a;">
+      <div style="max-width:760px;margin:0 auto;background:#ffffff;border-radius:18px;overflow:hidden;border:1px solid #dbeafe;">
+        <div style="background:#08243e;color:#ffffff;padding:22px 26px;">
+          <h1 style="margin:0;font-size:24px;">Alertas ADM de licencias SmartPozo360</h1>
+          <p style="margin:8px 0 0;color:#bae6fd;">Riesgo actual: ${escapeHtml(risk.label || "N/D")}</p>
+        </div>
+
+        <div style="padding:26px;">
+          <p style="margin-top:0;line-height:1.6;">
+            ${escapeHtml(risk.message || "")}
+          </p>
+
+          <h2 style="font-size:18px;color:#075985;">Resumen</h2>
+
+          <table style="width:100%;border-collapse:collapse;">
+            ${licenseAlertEmailRow("Ventana de revisión", `${summary.days || 30} día(s)`)}
+            ${licenseAlertEmailRow("Licencias por vencer", summary.expiringLicenses)}
+            ${licenseAlertEmailRow("Licencias vencidas", summary.expiredLicenses)}
+            ${licenseAlertEmailRow("Licencias suspendidas", summary.suspendedLicenses)}
+            ${licenseAlertEmailRow("Licencias revocadas", summary.revokedLicenses)}
+            ${licenseAlertEmailRow("Equipos suspendidos", summary.suspendedDevices)}
+            ${licenseAlertEmailRow("Equipos revocados", summary.revokedDevices)}
+            ${licenseAlertEmailRow("Bloqueos por límite", summary.deviceLimitBlocks)}
+          </table>
+
+          ${buildLicenseAlertItemsHtml("Licencias por vencer", alerts.expiringLicenses || [])}
+          ${buildLicenseAlertItemsHtml("Licencias vencidas", alerts.expiredLicenses || [])}
+          ${buildDeviceAlertItemsHtml("Equipos suspendidos o revocados", [
+            ...(alerts.suspendedDevices || []),
+            ...(alerts.revokedDevices || [])
+          ])}
+
+          <div style="margin-top:24px;padding:16px;border-radius:14px;background:#ecfeff;border:1px solid #a5f3fc;">
+            <p style="margin:0;line-height:1.6;">
+              Revisar el panel ADM de SEAZEP-WEB para renovar, suspender, reactivar o ajustar límites comerciales.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function buildLicenseAlertsEmailText(data = {}) {
+  const summary = data.summary || {};
+  const risk = data.risk || {};
+  const alerts = data.alerts || {};
+
+  const lines = [
+    "Alertas ADM de licencias SmartPozo360",
+    "",
+    `Riesgo: ${risk.label || "N/D"}`,
+    risk.message || "",
+    "",
+    "Resumen:",
+    `Ventana: ${summary.days || 30} día(s)`,
+    `Licencias por vencer: ${summary.expiringLicenses || 0}`,
+    `Licencias vencidas: ${summary.expiredLicenses || 0}`,
+    `Licencias suspendidas: ${summary.suspendedLicenses || 0}`,
+    `Licencias revocadas: ${summary.revokedLicenses || 0}`,
+    `Equipos suspendidos: ${summary.suspendedDevices || 0}`,
+    `Equipos revocados: ${summary.revokedDevices || 0}`,
+    `Bloqueos por límite: ${summary.deviceLimitBlocks || 0}`,
+    ""
+  ];
+
+  for (const license of (alerts.expiringLicenses || []).slice(0, 10)) {
+    lines.push(`Por vencer: ${license.license_id || "N/D"} — ${license.company_name || "Empresa no encontrada"} — vence ${license.expires_at || "N/D"}`);
+  }
+
+  for (const license of (alerts.expiredLicenses || []).slice(0, 10)) {
+    lines.push(`Vencida: ${license.license_id || "N/D"} — ${license.company_name || "Empresa no encontrada"} — venció ${license.expires_at || "N/D"}`);
+  }
+
+  lines.push("");
+  lines.push("Revisar el panel ADM de SEAZEP-WEB.");
+
+  return lines.join("\n");
+}
+
+function licenseAlertEmailRow(label, value) {
+  return `
+    <tr>
+      <td style="padding:10px 0;border-bottom:1px solid #e2e8f0;color:#64748b;font-weight:bold;">
+        ${escapeHtml(label)}
+      </td>
+      <td style="padding:10px 0;border-bottom:1px solid #e2e8f0;color:#0f172a;text-align:right;">
+        ${escapeHtml(value ?? 0)}
+      </td>
+    </tr>
+  `;
+}
+
+function buildLicenseAlertItemsHtml(title, items = []) {
+  if (!items.length) {
+    return "";
+  }
+
+  const rows = items.slice(0, 10).map((item) => `
+    <li style="margin-bottom:8px;">
+      <strong>${escapeHtml(item.license_id || "Licencia sin código")}</strong>
+      — ${escapeHtml(item.company_name || "Empresa no encontrada")}
+      — vence: ${escapeHtml(item.expires_at || "N/D")}
+    </li>
+  `).join("");
+
+  return `
+    <h2 style="font-size:18px;color:#075985;margin-top:24px;">${escapeHtml(title)}</h2>
+    <ul style="padding-left:20px;line-height:1.6;">
+      ${rows}
+    </ul>
+  `;
+}
+
+function buildDeviceAlertItemsHtml(title, items = []) {
+  if (!items.length) {
+    return "";
+  }
+
+  const rows = items.slice(0, 10).map((item) => `
+    <li style="margin-bottom:8px;">
+      <strong>${escapeHtml(item.machine_id || "Equipo sin ID")}</strong>
+      — ${escapeHtml(item.license_code || "Licencia no encontrada")}
+      — ${escapeHtml(item.company_name || "Empresa no encontrada")}
+      — estado: ${escapeHtml(item.status || "N/D")}
+    </li>
+  `).join("");
+
+  return `
+    <h2 style="font-size:18px;color:#075985;margin-top:24px;">${escapeHtml(title)}</h2>
+    <ul style="padding-left:20px;line-height:1.6;">
+      ${rows}
+    </ul>
+  `;
+}
+
 
 
 
