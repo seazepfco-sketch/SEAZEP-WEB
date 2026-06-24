@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartPozo360 — Validador de Licencias</title>
+
+  <style>
+    :root {
+      --bg: #07111f;
+      --panel: #0f1f33;
+      --panel-soft: #132a45;
+      --border: rgba(148, 163, 184, 0.25);
+      --text: #f8fafc;
+      --muted: #cbd5e1;
+      --primary: #38bdf8;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 34%),
+        radial-gradient(circle at bottom right, rgba(34, 197, 94, 0.14), transparent 30%),
+        var(--bg);
+      color: var(--text);
+      padding: 32px;
+    }
+
+    main {
+      width: min(1180px, 100%);
+      margin: 0 auto;
+    }
+
+    .hero {
+      margin-bottom: 24px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      color: var(--primary);
+      text-transform: uppercase;
+      font-size: 0.76rem;
+      letter-spacing: 0.14em;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      line-height: 1.05;
+    }
+
+    p {
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 22px;
+      align-items: start;
+    }
+
+    .card {
+      background: rgba(15, 31, 51, 0.84);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 22px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
+    }
+
+    .field {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    label {
+      color: #e2e8f0;
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+
+    input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 13px 14px;
+      background: rgba(2, 6, 23, 0.45);
+      color: var(--text);
+      outline: none;
+    }
+
+    input:focus {
+      border-color: rgba(56, 189, 248, 0.8);
+      box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.12);
+    }
+
+    .buttons {
+      display: grid;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 14px;
+      padding: 13px 16px;
+      cursor: pointer;
+      font-weight: 800;
+      color: #06111f;
+      background: var(--primary);
+    }
+
+    button.secondary {
+      background: #e2e8f0;
+    }
+
+    button.warning {
+      background: var(--warning);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .status-card {
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      padding: 20px;
+      margin-bottom: 18px;
+      background: rgba(2, 6, 23, 0.35);
+    }
+
+    .status-card h2 {
+      margin: 0 0 8px;
+      font-size: 1.7rem;
+    }
+
+    .status-valid {
+      border-color: rgba(34, 197, 94, 0.5);
+      background: rgba(20, 83, 45, 0.38);
+    }
+
+    .status-warning {
+      border-color: rgba(245, 158, 11, 0.5);
+      background: rgba(120, 53, 15, 0.38);
+    }
+
+    .status-blocked {
+      border-color: rgba(239, 68, 68, 0.5);
+      background: rgba(127, 29, 29, 0.38);
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .summary-item {
+      background: rgba(2, 6, 23, 0.35);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 16px;
+    }
+
+    .summary-item span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.82rem;
+      margin-bottom: 8px;
+    }
+
+    .summary-item strong {
+      display: block;
+      font-size: 1rem;
+      overflow-wrap: anywhere;
+    }
+
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      background: #020617;
+      color: #dbeafe;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      max-height: 520px;
+      overflow: auto;
+    }
+
+    .small-note {
+      font-size: 0.84rem;
+      color: var(--muted);
+      margin-top: 14px;
+    }
+
+    @media (max-width: 920px) {
+      body {
+        padding: 18px;
+      }
+
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .summary-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <section class="hero">
+      <span class="eyebrow">SEAZEP-WEB / SmartPozo360</span>
+      <h1>Validador visual de licencias.</h1>
+      <p>
+        Esta herramienta simula cómo SmartPozo360 debe consultar la API de SEAZEP para validar licencia,
+        activar equipo y bloquear el uso cuando corresponda.
+      </p>
+    </section>
+
+    <section class="layout">
+      <aside class="card">
+        <h2>Datos de prueba</h2>
+
+        <div class="field">
+          <label for="licenseId">Licencia</label>
+          <input id="licenseId" value="SPZ-8LBZ-UDE0-PG9" />
+        </div>
+
+        <div class="field">
+          <label for="productId">Producto ID</label>
+          <input id="productId" value="spz-product-smartpozo360" />
+        </div>
+
+        <div class="field">
+          <label for="machineId">Machine ID</label>
+          <input id="machineId" value="PC-DEMO-001" />
+        </div>
+
+        <div class="field">
+          <label for="deviceLabel">Nombre del equipo</label>
+          <input id="deviceLabel" value="Equipo demo SmartPozo360" />
+        </div>
+
+        <div class="field">
+          <label for="appVersion">Versión app</label>
+          <input id="appVersion" value="1.0.8" />
+        </div>
+
+        <div class="buttons">
+          <button id="checkButton" type="button">Validar licencia</button>
+          <button id="activateButton" class="secondary" type="button">Activar equipo</button>
+          <button id="fullFlowButton" class="warning" type="button">Flujo completo</button>
+        </div>
+
+        <p class="small-note">
+          Prueba rápida: usa PC-DEMO-001 para equipo autorizado y PC-DEMO-002 para bloqueo por límite.
+        </p>
+      </aside>
+
+      <section class="card">
+        <div id="statusCard" class="status-card">
+          <span class="eyebrow">Resultado</span>
+          <h2 id="statusTitle">Sin validar</h2>
+          <p id="statusMessage">
+            Presiona “Validar licencia” para consultar la API.
+          </p>
+        </div>
+
+        <div class="summary-grid">
+          <article class="summary-item">
+            <span>Licencia</span>
+            <strong id="summaryLicense">N/D</strong>
+          </article>
+
+          <article class="summary-item">
+            <span>Empresa</span>
+            <strong id="summaryCompany">N/D</strong>
+          </article>
+
+          <article class="summary-item">
+            <span>Equipo</span>
+            <strong id="summaryDevice">N/D</strong>
+          </article>
+
+          <article class="summary-item">
+            <span>Código</span>
+            <strong id="summaryCode">N/D</strong>
+          </article>
+
+          <article class="summary-item">
+            <span>Válida</span>
+            <strong id="summaryValid">N/D</strong>
+          </article>
+
+          <article class="summary-item">
+            <span>Activado</span>
+            <strong id="summaryActivated">N/D</strong>
+          </article>
+        </div>
+
+        <h2>Respuesta JSON</h2>
+        <pre id="jsonOutput">{}</pre>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const API_BASE_URL = "https://seazep-api.seazepfco.workers.dev";
+
+    const licenseIdInput = document.getElementById("licenseId");
+    const productIdInput = document.getElementById("productId");
+    const machineIdInput = document.getElementById("machineId");
+    const deviceLabelInput = document.getElementById("deviceLabel");
+    const appVersionInput = document.getElementById("appVersion");
+
+    const checkButton = document.getElementById("checkButton");
+    const activateButton = document.getElementById("activateButton");
+    const fullFlowButton = document.getElementById("fullFlowButton");
+
+    const statusCard = document.getElementById("statusCard");
+    const statusTitle = document.getElementById("statusTitle");
+    const statusMessage = document.getElementById("statusMessage");
+
+    const summaryLicense = document.getElementById("summaryLicense");
+    const summaryCompany = document.getElementById("summaryCompany");
+    const summaryDevice = document.getElementById("summaryDevice");
+    const summaryCode = document.getElementById("summaryCode");
+    const summaryValid = document.getElementById("summaryValid");
+    const summaryActivated = document.getElementById("summaryActivated");
+    const jsonOutput = document.getElementById("jsonOutput");
+
+    function getPayload() {
+      return {
+        licenseId: licenseIdInput.value.trim(),
+        productId: productIdInput.value.trim(),
+        machineId: machineIdInput.value.trim(),
+        deviceLabel: deviceLabelInput.value.trim(),
+        appVersion: appVersionInput.value.trim()
+      };
+    }
+
+    async function postJson(path, payload) {
+      const response = await fetch(`${API_BASE_URL}${path}`, {
+        method: "POST",
+        headers: {
+          "content-type": "text/plain;charset=UTF-8"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const result = await response.json();
+
+      return {
+        httpStatus: response.status,
+        httpOk: response.ok,
+        ...result
+      };
+    }
+
+    function setButtonsDisabled(disabled) {
+      checkButton.disabled = disabled;
+      activateButton.disabled = disabled;
+      fullFlowButton.disabled = disabled;
+    }
+
+    function setVisualResult(result) {
+      const code = result.code || "SIN_CODIGO";
+      const valid = result.valid === true;
+      const activated = result.activated === true || result.device?.activated === true;
+
+      statusCard.className = "status-card";
+
+      if (valid || code === "ACTIVATION_SUCCESS" || code === "DEVICE_ALREADY_ACTIVE") {
+        statusCard.classList.add("status-valid");
+        statusTitle.textContent = "Permitido";
+      } else if (code === "LICENSE_REQUIRES_ACTIVATION") {
+        statusCard.classList.add("status-warning");
+        statusTitle.textContent = "Requiere activación";
+      } else {
+        statusCard.classList.add("status-blocked");
+        statusTitle.textContent = "Bloqueado";
+      }
+
+      statusMessage.textContent = result.message || "Respuesta recibida desde la API.";
+
+      summaryLicense.textContent = result.license?.licenseId || result.licenseId || licenseIdInput.value || "N/D";
+      summaryCompany.textContent = result.company?.name || "N/D";
+      summaryDevice.textContent = result.device?.machineId || machineIdInput.value || "N/D";
+      summaryCode.textContent = code;
+      summaryValid.textContent = valid ? "Sí" : "No";
+      summaryActivated.textContent = activated ? "Sí" : "No";
+
+      jsonOutput.textContent = JSON.stringify(result, null, 2);
+    }
+
+    async function checkLicense() {
+      const payload = getPayload();
+
+      return postJson("/license/check", {
+        licenseId: payload.licenseId,
+        productId: payload.productId,
+        machineId: payload.machineId
+      });
+    }
+
+    async function activateDevice() {
+      const payload = getPayload();
+
+      return postJson("/activation/register", payload);
+    }
+
+    checkButton.addEventListener("click", async () => {
+      try {
+        setButtonsDisabled(true);
+        statusTitle.textContent = "Validando...";
+        statusMessage.textContent = "Consultando /license/check";
+
+        const result = await checkLicense();
+        setVisualResult(result);
+      } catch (error) {
+        setVisualResult({
+          ok: false,
+          code: "CLIENT_ERROR",
+          message: error.message || "Error al validar licencia."
+        });
+      } finally {
+        setButtonsDisabled(false);
+      }
+    });
+
+    activateButton.addEventListener("click", async () => {
+      try {
+        setButtonsDisabled(true);
+        statusTitle.textContent = "Activando...";
+        statusMessage.textContent = "Consultando /activation/register";
+
+        const result = await activateDevice();
+        setVisualResult(result);
+      } catch (error) {
+        setVisualResult({
+          ok: false,
+          code: "CLIENT_ERROR",
+          message: error.message || "Error al activar equipo."
+        });
+      } finally {
+        setButtonsDisabled(false);
+      }
+    });
+
+    fullFlowButton.addEventListener("click", async () => {
+      try {
+        setButtonsDisabled(true);
+        statusTitle.textContent = "Ejecutando flujo completo...";
+        statusMessage.textContent = "Primero se validará la licencia.";
+
+        const firstCheck = await checkLicense();
+
+        if (firstCheck.valid === true) {
+          setVisualResult(firstCheck);
+          return;
+        }
+
+        if (firstCheck.code === "LICENSE_REQUIRES_ACTIVATION") {
+          const activation = await activateDevice();
+
+          if (activation.activated === true) {
+            const secondCheck = await checkLicense();
+
+            setVisualResult({
+              flow: "check_activation_second_check",
+              firstCheck,
+              activation,
+              secondCheck,
+              ...secondCheck
+            });
+
+            return;
+          }
+
+          setVisualResult({
+            flow: "check_activation_failed",
+            firstCheck,
+            activation,
+            ...activation
+          });
+
+          return;
+        }
+
+        setVisualResult(firstCheck);
+      } catch (error) {
+        setVisualResult({
+          ok: false,
+          code: "CLIENT_ERROR",
+          message: error.message || "Error al ejecutar flujo completo."
+        });
+      } finally {
+        setButtonsDisabled(false);
+      }
+    });
+  </script>
+</body>
+</html>
