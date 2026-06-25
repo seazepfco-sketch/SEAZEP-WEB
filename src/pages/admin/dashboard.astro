@@ -5,6 +5,68 @@ import Footer from "../../components/Footer.astro";
 import SectionTitle from "../../components/SectionTitle.astro";
 ---
 
+
+<script>
+(async () => {
+  const session = localStorage.getItem("admin_session");
+
+if (!session) {
+  window.location.href = "/admin/login";
+  return;
+}
+
+try {
+  const res = await fetch("https://seazep-api.seazepfco.workers.dev/admin/session-validate", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      session
+    })
+  });
+
+  const data = await res.json();
+
+  if (!data.ok) {
+    window.location.href = "/admin/login";
+    return;
+  }
+
+} catch (error) {
+  window.location.href = "/admin/login";
+  return;
+}
+
+
+
+
+  try {
+    const res = await fetch("https://seazep-api.seazepfco.workers.dev/admin/session-validate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        session: session
+      })
+    });
+
+    const data = await res.json();
+
+    if (!data.ok) {
+      window.location.href = "/admin/login";
+    }
+
+  } catch (e) {
+    console.log("session check failed");
+    window.location.href = "/admin/login";
+  }
+})();
+</script>
+
+
+
 <BaseLayout title="Panel ADM | SEAZEP">
   <Header active="admin" />
 
@@ -265,6 +327,114 @@ import SectionTitle from "../../components/SectionTitle.astro";
 
 
 
+        <section class="admin-filter-panel admin-license-activity-panel">
+        <div class="admin-filter-header">
+          <div>
+            <span class="eyebrow">Actividad SaaS</span>
+            <h3>Actividad y heartbeat de SmartPozo360</h3>
+            <p>
+              Consulta aperturas, heartbeats, accesos ADM, guardados y actualizaciones de pozos por empresa, licencia y equipo.
+            </p>
+          </div>
+
+          <button class="btn btn-ghost" id="refreshLicenseActivityButton" type="button">
+            Actualizar actividad
+          </button>
+        </div>
+
+        <div class="admin-summary-grid license-executive-grid">
+          <article class="admin-summary-card">
+            <span>Eventos hoy</span>
+            <strong id="activityTodayTotal">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Accesos ADM hoy</span>
+            <strong id="activityTodayAdminLogins">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Heartbeats hoy</span>
+            <strong id="activityTodayHeartbeats">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Guardados de pozos hoy</span>
+            <strong id="activityTodayWellSaves">0</strong>
+          </article>
+
+          <article class="admin-summary-card">
+            <span>Actualizaciones de pozos hoy</span>
+            <strong id="activityTodayWellUpdates">0</strong>
+          </article>
+
+          <article class="admin-summary-card danger">
+            <span>Equipos inactivos</span>
+            <strong id="activityInactiveDevices">0</strong>
+          </article>
+        </div>
+
+        <div class="admin-filter-grid">
+          <label class="admin-filter-field">
+            <span>Licencia / ID interno</span>
+            <input
+              class="input"
+              id="licenseOfflineIdInput"
+              placeholder="Ejemplo: SPZ-OZC7-NO22-6D6K"
+            />
+          </label>
+
+          <label class="admin-filter-field">
+            <span>Días offline permitidos</span>
+            <input
+              class="input"
+              id="licenseOfflineDaysInput"
+              type="number"
+              min="1"
+              max="30"
+              value="4"
+            />
+          </label>
+
+          <label class="admin-filter-field">
+            <span>Control</span>
+            <button class="btn btn-primary" id="updateLicenseOfflineDaysButton" type="button">
+              Guardar días offline
+            </button>
+          </label>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Empresa</th>
+                <th>Licencia</th>
+                <th>Equipo</th>
+                <th>Evento</th>
+                <th>Versión</th>
+                <th>Resultado</th>
+              </tr>
+            </thead>
+
+            <tbody id="licenseActivityTableBody">
+              <tr>
+                <td colspan="7" class="admin-empty">
+                  Ingrese la clave ADM y presione “Actualizar actividad”.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p id="licenseActivityStatus" class="form-status" aria-live="polite"></p>
+      </section>
+
+
+
+
+
       <section class="admin-requests-section">
         <div class="admin-section-header">
           <div>
@@ -333,6 +503,9 @@ const ADMIN_LICENSES_URL = "https://seazep-api.seazepfco.workers.dev/admin/licen
 const ADMIN_LICENSE_ACTIVATIONS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-activations";
 const ADMIN_LICENSE_CHECKS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-checks";
 
+const ADMIN_LICENSE_ACTIVITY_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-activity";
+const ADMIN_LICENSE_OFFLINE_DAYS_URL = "https://seazep-api.seazepfco.workers.dev/admin/licenses/update-offline-days";
+
 
 
     const keyInput = document.getElementById("adminApiKey");
@@ -356,6 +529,20 @@ const ADMIN_LICENSE_CHECKS_URL = "https://seazep-api.seazepfco.workers.dev/admin
     const alertLimitBlocks = document.getElementById("alertLimitBlocks");
     const licenseAlertsList = document.getElementById("licenseAlertsList");
     const licenseAlertsStatus = document.getElementById("licenseAlertsStatus");
+
+    const refreshLicenseActivityButton = document.getElementById("refreshLicenseActivityButton");
+    const activityTodayTotal = document.getElementById("activityTodayTotal");
+    const activityTodayAdminLogins = document.getElementById("activityTodayAdminLogins");
+    const activityTodayHeartbeats = document.getElementById("activityTodayHeartbeats");
+    const activityTodayWellSaves = document.getElementById("activityTodayWellSaves");
+    const activityTodayWellUpdates = document.getElementById("activityTodayWellUpdates");
+    const activityInactiveDevices = document.getElementById("activityInactiveDevices");
+    const licenseActivityTableBody = document.getElementById("licenseActivityTableBody");
+    const licenseActivityStatus = document.getElementById("licenseActivityStatus");
+    const licenseOfflineIdInput = document.getElementById("licenseOfflineIdInput");
+    const licenseOfflineDaysInput = document.getElementById("licenseOfflineDaysInput");
+    const updateLicenseOfflineDaysButton = document.getElementById("updateLicenseOfflineDaysButton");
+
 
 
     const tableBody = document.getElementById("requestsTableBody");
@@ -1134,6 +1321,204 @@ async function updateRequestStatus(id, status) {
 
 
 
+     function setLicenseActivityStatus(message, type = "") {
+      if (!licenseActivityStatus) return;
+
+      licenseActivityStatus.textContent = message;
+      licenseActivityStatus.className = type ? `form-status ${type}` : "form-status";
+    }
+
+    function setActivityNumber(element, value) {
+      if (!element) return;
+      element.textContent = String(value || 0);
+    }
+
+    function getActivityEventLabel(eventType) {
+      const labels = {
+        app_open: "Apertura",
+        heartbeat: "Heartbeat",
+        license_check: "Validación",
+        license_saved: "Licencia guardada",
+        well_save: "Pozo guardado",
+        well_update: "Pozo actualizado",
+        admin_login: "Acceso ADM"
+      };
+
+      return labels[eventType] || eventType || "Evento";
+    }
+
+    function renderLicenseActivityTable(events = []) {
+      if (!licenseActivityTableBody) return;
+
+      if (!events.length) {
+        licenseActivityTableBody.innerHTML = `
+          <tr>
+            <td colspan="7" class="admin-empty">
+              No hay actividad registrada en el periodo consultado.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      licenseActivityTableBody.innerHTML = events.map((item) => `
+        <tr>
+          <td>${escapeHtml(formatDate(item.created_at || item.server_timestamp))}</td>
+
+          <td>
+            <strong>${escapeHtml(item.company_name || "Empresa no encontrada")}</strong>
+            <small>${escapeHtml(item.company_id || "")}</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(item.license_code || "Sin licencia")}</strong>
+            <small>${escapeHtml(item.product_slug || "smartpozo360")}</small>
+          </td>
+
+          <td>
+            <strong>${escapeHtml(item.machine_id || "Sin equipo")}</strong>
+            <small>${escapeHtml(item.device_label || "Sin etiqueta")}</small>
+          </td>
+
+          <td>${escapeHtml(getActivityEventLabel(item.event_type))}</td>
+          <td>${escapeHtml(item.app_version || "N/D")}</td>
+
+          <td>
+            <span class="admin-status-pill status-${escapeHtml(item.result || "accepted")}">
+              ${escapeHtml(item.result || "accepted")}
+            </span>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadLicenseActivity() {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setLicenseActivityStatus("Ingrese la clave ADM para cargar actividad SaaS.", "error");
+        return;
+      }
+
+      if (refreshLicenseActivityButton) {
+        refreshLicenseActivityButton.disabled = true;
+      }
+
+      try {
+        setLicenseActivityStatus("Cargando actividad de SmartPozo360...");
+
+        const response = await fetch(`${ADMIN_LICENSE_ACTIVITY_URL}?limit=50&days=7`, {
+          method: "GET",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey
+          }
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudo cargar la actividad.");
+        }
+
+        const summary = result.summary || {};
+        const today = summary.today || {};
+
+        setActivityNumber(activityTodayTotal, today.total || 0);
+        setActivityNumber(activityTodayAdminLogins, today.adminLogins || 0);
+        setActivityNumber(activityTodayHeartbeats, today.heartbeats || 0);
+        setActivityNumber(activityTodayWellSaves, today.wellSaves || 0);
+        setActivityNumber(activityTodayWellUpdates, today.wellUpdates || 0);
+        setActivityNumber(activityInactiveDevices, summary.inactiveDevices || 0);
+
+        renderLicenseActivityTable(result.events || []);
+
+        setLicenseActivityStatus(
+          `Actividad cargada: ${result.total || 0} evento(s) de los últimos 7 días.`,
+          "success"
+        );
+      } catch (error) {
+        setActivityNumber(activityTodayTotal, 0);
+        setActivityNumber(activityTodayAdminLogins, 0);
+        setActivityNumber(activityTodayHeartbeats, 0);
+        setActivityNumber(activityTodayWellSaves, 0);
+        setActivityNumber(activityTodayWellUpdates, 0);
+        setActivityNumber(activityInactiveDevices, 0);
+
+        renderLicenseActivityTable([]);
+        setLicenseActivityStatus(error.message || "Error al cargar actividad.", "error");
+      } finally {
+        if (refreshLicenseActivityButton) {
+          refreshLicenseActivityButton.disabled = false;
+        }
+      }
+    }
+
+    async function updateLicenseOfflineDays() {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setLicenseActivityStatus("Ingrese la clave ADM antes de actualizar días offline.", "error");
+        return;
+      }
+
+      const licenseRef = String(licenseOfflineIdInput?.value || "").trim();
+      const maxOfflineDays = Number(licenseOfflineDaysInput?.value || 4);
+
+      if (!licenseRef) {
+        setLicenseActivityStatus("Ingrese el código o ID interno de la licencia.", "error");
+        return;
+      }
+
+      if (!Number.isFinite(maxOfflineDays) || maxOfflineDays < 1 || maxOfflineDays > 30) {
+        setLicenseActivityStatus("Los días offline deben estar entre 1 y 30.", "error");
+        return;
+      }
+
+      if (updateLicenseOfflineDaysButton) {
+        updateLicenseOfflineDaysButton.disabled = true;
+      }
+
+      try {
+        setLicenseActivityStatus("Actualizando días offline permitidos...");
+
+        const response = await fetch(ADMIN_LICENSE_OFFLINE_DAYS_URL, {
+          method: "POST",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey,
+            "content-type": "text/plain;charset=UTF-8"
+          },
+          body: JSON.stringify({
+            licenseId: licenseRef,
+            maxOfflineDays
+          })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudieron actualizar los días offline.");
+        }
+
+        setLicenseActivityStatus(
+          `Días offline actualizados: ${result.license?.maxOfflineDays || maxOfflineDays} día(s).`,
+          "success"
+        );
+
+        await loadLicenseActivity();
+      } catch (error) {
+        setLicenseActivityStatus(error.message || "Error al actualizar días offline.", "error");
+      } finally {
+        if (updateLicenseOfflineDaysButton) {
+          updateLicenseOfflineDaysButton.disabled = false;
+        }
+      }
+    }
+
+
+
+
     async function loadRequests() {
   if (!keyInput) return;
 
@@ -1213,6 +1598,7 @@ async function loadAdminDashboardData() {
   await loadRequests();
   await loadLicenseOverview();
   await loadLicenseAlerts();
+  await loadLicenseActivity();
 }
 
 
@@ -1238,6 +1624,9 @@ clearFiltersButton?.addEventListener("click", () => {
     refreshButton?.addEventListener("click", loadAdminDashboardData);
 
      refreshLicenseAlertsButton?.addEventListener("click", loadLicenseAlerts);
+
+     refreshLicenseActivityButton?.addEventListener("click", loadLicenseActivity);
+    updateLicenseOfflineDaysButton?.addEventListener("click", updateLicenseOfflineDays);
 
 
     tableBody?.addEventListener("click", async (event) => {

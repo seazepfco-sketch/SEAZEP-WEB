@@ -57,6 +57,14 @@ if (url.pathname === "/auth/reset-password" && request.method === "POST") {
 
 
 
+  if (url.pathname === "/admin/login" && request.method === "POST") {
+  return handleAdminLogin(request, env);
+}
+
+if (url.pathname === "/admin/session-validate" && request.method === "POST") {
+  return handleAdminSessionValidate(request, env);
+}
+
 
     
     if (url.pathname === "/admin/requests" && request.method === "GET") {
@@ -220,6 +228,20 @@ if (url.pathname === "/user/manuals" && request.method === "GET") {
     if (url.pathname === "/activation/register" && request.method === "POST") {
   return handleActivationRegister(request, env);
 }
+
+
+
+  
+if (url.pathname === "/admin/license-activity" && request.method === "GET") {
+  return handleAdminListLicenseActivity(request, env);
+}
+
+if (url.pathname === "/admin/licenses/update-offline-days" && request.method === "POST") {
+  return handleAdminUpdateLicenseOfflineDays(request, env);
+}
+
+
+
 
     return corsResponse({
       ok: false,
@@ -6284,6 +6306,8 @@ function buildDeviceAlertItemsHtml(title, items = []) {
 
 
 
+
+
   async function handleLicenseActivity(request, env) {
   let body;
 
@@ -6293,24 +6317,77 @@ function buildDeviceAlertItemsHtml(title, items = []) {
     return corsResponse({
       ok: false,
       allow: false,
+      accepted: false,
       code: "INVALID_JSON",
       message: "La solicitud no contiene JSON válido."
     }, 400);
   }
 
-  const licenseId = cleanText(body.licenseId || body.license_id || "", 80);
-  const productId = cleanText(body.productId || body.product_id || "", 120);
-  const productSlug = cleanText(body.productSlug || body.product_slug || "", 120);
-  const machineId = cleanText(body.machineId || body.machine_id || "", 160);
-  const eventType = cleanText(body.event || body.eventType || "heartbeat", 80);
-  const appVersion = cleanText(body.appVersion || body.app_version || "", 80);
-  const deviceLabel = cleanText(body.deviceLabel || body.device_label || "", 160);
-  const clientTimestamp = cleanText(body.timestamp || body.clientTimestamp || "", 80);
+  const licenseCode = cleanText(
+    body.licenseId || body.license_id || body.licenseCode || body.license_code || body.key || "",
+    120
+  ).toUpperCase();
 
-  if (!licenseId) {
+  const productId = cleanText(
+    body.productId || body.product_id || "spz-product-smartpozo360",
+    120
+  );
+
+  const productSlug = cleanText(
+    body.productSlug || body.product_slug || "smartpozo360",
+    120
+  ).toLowerCase();
+
+  const machineId = cleanText(
+    body.machineId || body.machine_id || "",
+    180
+  );
+
+  const eventType = cleanText(
+    body.event || body.eventType || body.event_type || "heartbeat",
+    80
+  ).toLowerCase();
+
+  const eventSource = cleanText(
+    body.eventSource || body.event_source || "smartpozo360",
+    80
+  ).toLowerCase();
+
+  const appVersion = cleanText(
+    body.appVersion || body.app_version || "",
+    80
+  );
+
+  const deviceLabel = cleanText(
+    body.deviceLabel || body.device_label || "",
+    180
+  );
+
+  const clientTimestamp = cleanText(
+    body.timestamp || body.clientTimestamp || body.client_timestamp || "",
+    120
+  );
+
+  const allowedEvents = [
+    "app_open",
+    "heartbeat",
+    "license_check",
+    "license_saved",
+    "well_save",
+    "well_update",
+    "admin_login"
+  ];
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const ipAddress = request.headers.get("cf-connecting-ip") || "";
+  const userAgent = cleanText(request.headers.get("user-agent") || "", 500);
+
+  if (!licenseCode) {
     return corsResponse({
       ok: false,
       allow: false,
+      accepted: false,
       code: "LICENSE_REQUIRED",
       message: "Falta licenseId."
     }, 400);
@@ -6320,45 +6397,53 @@ function buildDeviceAlertItemsHtml(title, items = []) {
     return corsResponse({
       ok: false,
       allow: false,
+      accepted: false,
       code: "MACHINE_REQUIRED",
       message: "Falta machineId."
     }, 400);
   }
 
-  const now = new Date().toISOString();
-  const ipAddress = request.headers.get("cf-connecting-ip") || "";
-  const userAgent = request.headers.get("user-agent") || "";
+  if (!allowedEvents.includes(eventType)) {
+    return corsResponse({
+      ok: false,
+      allow: false,
+      accepted: false,
+      code: "INVALID_EVENT_TYPE",
+      message: "Tipo de evento no permitido."
+    }, 400);
+  }
 
   const license = await env.DB.prepare(`
     SELECT
-      l.id,
+      l.id AS license_db_id,
       l.license_id,
       l.license_name,
       l.company_id,
+      c.name AS company_name,
+      c.status AS company_status,
       l.product_id,
+      sp.slug AS product_slug,
+      sp.name AS product_name,
+      sp.status AS product_status,
       l.status,
       l.starts_at,
       l.expires_at,
       l.max_devices,
-      COALESCE(l.max_offline_days, 4) AS max_offline_days,
-      c.name AS company_name,
-      c.status AS company_status,
-      sp.slug AS product_slug,
-      sp.name AS product_name,
-      sp.status AS product_status
+      COALESCE(l.max_offline_days, 4) AS max_offline_days
     FROM licenses l
     LEFT JOIN companies c ON c.id = l.company_id
     LEFT JOIN software_products sp ON sp.id = l.product_id
-    WHERE l.license_id = ?
+    WHERE upper(l.license_id) = upper(?)
     LIMIT 1
   `)
-    .bind(licenseId)
+    .bind(licenseCode)
     .first();
 
   let result = "valid";
   let allow = true;
   let code = "ACTIVITY_ACCEPTED";
   let message = "Actividad registrada correctamente.";
+  let activation = null;
 
   if (!license) {
     result = "license_not_found";
@@ -6381,42 +6466,48 @@ function buildDeviceAlertItemsHtml(title, items = []) {
     message = "La licencia no corresponde al producto indicado.";
   }
 
-  if (license && license.product_status !== "published") {
+  if (license && (license.product_status || "") !== "published") {
     result = "product_not_published";
     allow = false;
     code = "PRODUCT_NOT_PUBLISHED";
     message = "El producto no está publicado.";
   }
 
-  if (license && license.company_status !== "active") {
+  if (license && license.company_status && license.company_status !== "active") {
     result = "company_not_active";
     allow = false;
     code = "COMPANY_NOT_ACTIVE";
     message = "La empresa asociada no está activa.";
   }
 
-  if (license && license.status !== "active") {
+  if (license && (license.status || "active") !== "active") {
     result = `license_${license.status || "not_active"}`;
     allow = false;
     code = `LICENSE_${String(license.status || "not_active").toUpperCase()}`;
     message = "La licencia no está activa.";
   }
 
-  if (license && license.starts_at && new Date(license.starts_at) > new Date()) {
-    result = "license_not_started";
-    allow = false;
-    code = "LICENSE_NOT_STARTED";
-    message = "La licencia todavía no inicia.";
+  if (license && license.starts_at) {
+    const startsAt = new Date(license.starts_at);
+
+    if (!Number.isNaN(startsAt.getTime()) && startsAt > now) {
+      result = "license_not_started";
+      allow = false;
+      code = "LICENSE_NOT_STARTED";
+      message = "La licencia todavía no inicia.";
+    }
   }
 
-  if (license && license.expires_at && new Date(license.expires_at) <= new Date()) {
-    result = "license_expired";
-    allow = false;
-    code = "LICENSE_EXPIRED";
-    message = "La licencia está vencida.";
-  }
+  if (license && license.expires_at) {
+    const expiresAt = new Date(license.expires_at);
 
-  let activation = null;
+    if (!Number.isNaN(expiresAt.getTime()) && expiresAt <= now) {
+      result = "license_expired";
+      allow = false;
+      code = "LICENSE_EXPIRED";
+      message = "La licencia está vencida.";
+    }
+  }
 
   if (license) {
     activation = await env.DB.prepare(`
@@ -6433,7 +6524,10 @@ function buildDeviceAlertItemsHtml(title, items = []) {
       ORDER BY activated_at DESC
       LIMIT 1
     `)
-      .bind(license.id, machineId)
+      .bind(
+        license.license_db_id,
+        machineId
+      )
       .first();
 
     if (!activation) {
@@ -6451,52 +6545,32 @@ function buildDeviceAlertItemsHtml(title, items = []) {
     }
   }
 
-  await env.DB.prepare(`
-    INSERT INTO license_activity_events (
-      id,
-      license_id,
-      license_db_id,
-      company_id,
-      product_id,
-      machine_id,
-      event_type,
-      result,
-      app_version,
-      device_label,
-      client_timestamp,
-      server_timestamp,
-      ip_address,
-      user_agent,
-      metadata,
-      created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `)
-    .bind(
-      crypto.randomUUID(),
-      licenseId,
-      license?.id || "",
-      license?.company_id || "",
-      license?.product_id || productId || "",
-      machineId,
-      eventType,
-      result,
-      appVersion,
-      deviceLabel,
+  await insertLicenseActivityEvent(env, {
+    licenseDbId: license?.license_db_id || "",
+    licenseCode,
+    companyId: license?.company_id || "",
+    companyName: license?.company_name || "",
+    productId: license?.product_id || productId || "",
+    productSlug: license?.product_slug || productSlug || "",
+    machineId,
+    deviceLabel,
+    appVersion,
+    eventType,
+    eventSource,
+    result,
+    metadata: {
+      allow,
+      code,
+      message,
       clientTimestamp,
-      now,
-      ipAddress,
-      userAgent,
-      JSON.stringify({
-        allow,
-        code,
-        eventType,
-        companyName: license?.company_name || "",
-        productName: license?.product_name || "",
-        activationId: activation?.id || ""
-      }),
-      now
-    )
-    .run();
+      activationId: activation?.id || "",
+      activationStatus: activation?.status || "",
+      productName: license?.product_name || ""
+    },
+    ipAddress,
+    userAgent,
+    nowIso
+  });
 
   if (license && activation && activation.status === "active") {
     await env.DB.prepare(`
@@ -6508,7 +6582,7 @@ function buildDeviceAlertItemsHtml(title, items = []) {
       WHERE id = ?
     `)
       .bind(
-        now,
+        nowIso,
         appVersion,
         deviceLabel,
         activation.id
@@ -6516,39 +6590,46 @@ function buildDeviceAlertItemsHtml(title, items = []) {
       .run();
   }
 
+  const maxOfflineDays = Number(license?.max_offline_days || 4);
+  const nextRequiredBefore = new Date(
+    now.getTime() + (maxOfflineDays * 24 * 60 * 60 * 1000)
+  ).toISOString();
+
   return corsResponse({
     ok: true,
     allow,
+    accepted: allow,
     code,
     message,
-    checkedAt: now,
-    serverTimestamp: now,
-    maxOfflineDays: Number(license?.max_offline_days || 4),
+    checkedAt: nowIso,
+    serverTimestamp: nowIso,
+    nextRequiredBefore,
+    maxOfflineDays,
     activity: {
       event: eventType,
       result,
       machineId
     },
     license: license ? {
-      id: license.id,
+      id: license.license_db_id,
       licenseId: license.license_id,
-      licenseName: license.license_name,
+      licenseName: license.license_name || "",
       status: allow ? "active" : result,
-      startsAt: license.starts_at,
-      expiresAt: license.expires_at,
+      startsAt: license.starts_at || "",
+      expiresAt: license.expires_at || "",
       maxDevices: Number(license.max_devices || 1),
-      maxOfflineDays: Number(license.max_offline_days || 4)
+      maxOfflineDays
     } : null,
     company: license ? {
-      id: license.company_id,
-      name: license.company_name,
-      status: license.company_status
+      id: license.company_id || "",
+      name: license.company_name || "",
+      status: license.company_status || ""
     } : null,
     product: license ? {
-      id: license.product_id,
-      slug: license.product_slug,
-      name: license.product_name,
-      status: license.product_status
+      id: license.product_id || "",
+      slug: license.product_slug || "",
+      name: license.product_name || "",
+      status: license.product_status || ""
     } : null,
     device: {
       machineId,
@@ -6560,7 +6641,7 @@ function buildDeviceAlertItemsHtml(title, items = []) {
 
 
 
-
+  
   
   async function handleLicenseCheck(request, env) {
   let body;
@@ -6639,6 +6720,7 @@ function buildDeviceAlertItemsHtml(title, items = []) {
       l.expires_at,
       l.max_users,
       l.max_devices,
+      COALESCE(l.max_offline_days, 4) AS max_offline_days,
       l.created_at,
       l.updated_at
     FROM licenses l
@@ -6864,7 +6946,8 @@ function buildDeviceAlertItemsHtml(title, items = []) {
       startsAt: license.starts_at || "",
       expiresAt: license.expires_at || "",
       maxUsers: Number(license.max_users || 1),
-      maxDevices: Number(license.max_devices || 1)
+      maxDevices: Number(license.max_devices || 1),
+      maxOfflineDays: Number(license.max_offline_days || 4)
     },
     product: {
       id: license.product_id,
@@ -7012,6 +7095,7 @@ async function recordLicenseCheck(env, data) {
       l.expires_at,
       l.max_users,
       l.max_devices,
+      COALESCE(l.max_offline_days, 4) AS max_offline_days,
       l.created_at,
       l.updated_at
     FROM licenses l
@@ -7253,7 +7337,8 @@ async function recordLicenseCheck(env, data) {
         licenseName: license.license_name || "",
         status: license.status,
         expiresAt: license.expires_at || "",
-        maxDevices: Number(license.max_devices || 1)
+         maxDevices: Number(license.max_devices || 1),
+        maxOfflineDays: Number(license.max_offline_days || 4)
       }
     });
   }
@@ -7457,7 +7542,8 @@ async function recordLicenseCheck(env, data) {
       status: license.status,
       startsAt: license.starts_at || "",
       expiresAt: license.expires_at || "",
-      maxDevices
+      maxDevices,
+      maxOfflineDays: Number(license.max_offline_days || 4)
     },
     product: {
       id: license.product_id,
@@ -7469,6 +7555,457 @@ async function recordLicenseCheck(env, data) {
       name: license.company_name || ""
     }
   }, 201);
+}
+
+
+
+
+ 
+async function insertLicenseActivityEvent(env, data) {
+  try {
+    await env.DB.prepare(`
+      INSERT INTO license_activity_events (
+        id,
+        license_db_id,
+        license_code,
+        company_id,
+        company_name,
+        product_id,
+        product_slug,
+        machine_id,
+        device_label,
+        app_version,
+        event_type,
+        event_source,
+        result,
+        metadata,
+        ip_address,
+        user_agent,
+        server_timestamp,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+      .bind(
+        crypto.randomUUID(),
+        data.licenseDbId || null,
+        data.licenseCode || "",
+        data.companyId || null,
+        data.companyName || "",
+        data.productId || "",
+        data.productSlug || "",
+        data.machineId || "",
+        data.deviceLabel || "",
+        data.appVersion || "",
+        data.eventType || "heartbeat",
+        data.eventSource || "smartpozo360",
+        data.result || "accepted",
+        JSON.stringify(data.metadata || {}),
+        data.ipAddress || "",
+        data.userAgent || "",
+        data.nowIso || new Date().toISOString(),
+        data.nowIso || new Date().toISOString()
+      )
+      .run();
+  } catch {
+    /*
+      No se detiene el flujo principal si falla el registro de actividad.
+    */
+  }
+}
+
+async function handleAdminListLicenseActivity(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  const url = new URL(request.url);
+  const limit = Math.min(parsePositiveInteger(url.searchParams.get("limit"), 50), 200);
+  const days = Math.min(parsePositiveInteger(url.searchParams.get("days"), 7), 90);
+
+  const companyId = cleanText(url.searchParams.get("companyId") || "", 100);
+  const licenseCode = cleanText(url.searchParams.get("licenseId") || url.searchParams.get("licenseCode") || "", 120).toUpperCase();
+  const machineId = cleanText(url.searchParams.get("machineId") || "", 180);
+  const eventType = cleanText(url.searchParams.get("eventType") || "", 80).toLowerCase();
+
+  const since = new Date(Date.now() - (days * 24 * 60 * 60 * 1000)).toISOString();
+
+  const filters = [
+    "created_at >= ?"
+  ];
+
+  const binds = [
+    since
+  ];
+
+  if (companyId) {
+    filters.push("company_id = ?");
+    binds.push(companyId);
+  }
+
+  if (licenseCode) {
+    filters.push("upper(license_code) = upper(?)");
+    binds.push(licenseCode);
+  }
+
+  if (machineId) {
+    filters.push("machine_id = ?");
+    binds.push(machineId);
+  }
+
+  if (eventType) {
+    filters.push("event_type = ?");
+    binds.push(eventType);
+  }
+
+  const whereSql = filters.join(" AND ");
+
+  const eventsResult = await env.DB.prepare(`
+    SELECT
+      id,
+      license_db_id,
+      license_code,
+      company_id,
+      company_name,
+      product_id,
+      product_slug,
+      machine_id,
+      device_label,
+      app_version,
+      event_type,
+      event_source,
+      result,
+      metadata,
+      ip_address,
+      user_agent,
+      server_timestamp,
+      created_at
+    FROM license_activity_events
+    WHERE ${whereSql}
+    ORDER BY created_at DESC
+    LIMIT ?
+  `)
+    .bind(
+      ...binds,
+      limit
+    )
+    .all();
+
+  const events = eventsResult.results || [];
+
+  const byEventResult = await env.DB.prepare(`
+    SELECT
+      event_type,
+      COUNT(*) AS total
+    FROM license_activity_events
+    WHERE ${whereSql}
+    GROUP BY event_type
+    ORDER BY total DESC
+  `)
+    .bind(...binds)
+    .all();
+
+  const todayStart = new Date();
+  todayStart.setUTCHours(0, 0, 0, 0);
+  const todayIso = todayStart.toISOString();
+
+  const todayResult = await env.DB.prepare(`
+    SELECT
+      event_type,
+      COUNT(*) AS total
+    FROM license_activity_events
+    WHERE created_at >= ?
+    GROUP BY event_type
+  `)
+    .bind(todayIso)
+    .all();
+
+  const todayRows = todayResult.results || [];
+  const todayByType = Object.fromEntries(
+    todayRows.map((row) => [row.event_type, Number(row.total || 0)])
+  );
+
+  const latestByDeviceResult = await env.DB.prepare(`
+    SELECT
+      e.company_id,
+      e.company_name,
+      e.license_code,
+      e.machine_id,
+      MAX(e.created_at) AS last_activity_at,
+      COALESCE(l.max_offline_days, 4) AS max_offline_days
+    FROM license_activity_events e
+    LEFT JOIN licenses l ON l.id = e.license_db_id
+    WHERE e.machine_id IS NOT NULL
+      AND e.machine_id != ''
+    GROUP BY
+      e.company_id,
+      e.company_name,
+      e.license_code,
+      e.machine_id,
+      COALESCE(l.max_offline_days, 4)
+  `)
+    .all();
+
+  const nowTime = Date.now();
+  const inactiveDevices = (latestByDeviceResult.results || []).filter((item) => {
+    const lastTime = new Date(item.last_activity_at || "").getTime();
+
+    if (!Number.isFinite(lastTime)) {
+      return false;
+    }
+
+    const maxOfflineDays = Number(item.max_offline_days || 4);
+    const maxOfflineMs = maxOfflineDays * 24 * 60 * 60 * 1000;
+
+    return (nowTime - lastTime) > maxOfflineMs;
+  });
+
+  return corsResponse({
+    ok: true,
+    filters: {
+      days,
+      limit,
+      companyId,
+      licenseCode,
+      machineId,
+      eventType
+    },
+    total: events.length,
+    events,
+    summary: {
+      byEventType: byEventResult.results || [],
+      today: {
+        total: todayRows.reduce((sum, row) => sum + Number(row.total || 0), 0),
+        appOpen: todayByType.app_open || 0,
+        heartbeats: todayByType.heartbeat || 0,
+        adminLogins: todayByType.admin_login || 0,
+        wellSaves: todayByType.well_save || 0,
+        wellUpdates: todayByType.well_update || 0
+      },
+      inactiveDevices: inactiveDevices.length,
+      inactiveDeviceList: inactiveDevices.slice(0, 25)
+    }
+  });
+}
+
+async function handleAdminUpdateLicenseOfflineDays(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const licenseRef = cleanText(
+    body.id || body.licenseDbId || body.license_db_id || body.licenseId || body.license_id || body.licenseCode || body.license_code || "",
+    120
+  );
+
+  const maxOfflineDays = Number(body.maxOfflineDays || body.max_offline_days || body.days || 4);
+
+  if (!licenseRef) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_LICENSE",
+      message: "Falta el ID interno o código de licencia."
+    }, 400);
+  }
+
+  if (
+    !Number.isFinite(maxOfflineDays) ||
+    Math.trunc(maxOfflineDays) < 1 ||
+    Math.trunc(maxOfflineDays) > 30
+  ) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_MAX_OFFLINE_DAYS",
+      message: "Los días offline permitidos deben estar entre 1 y 30."
+    }, 400);
+  }
+
+  const normalizedDays = Math.trunc(maxOfflineDays);
+  const nowIso = new Date().toISOString();
+
+  const existing = await env.DB.prepare(`
+    SELECT
+      id,
+      license_id,
+      license_name,
+      company_id,
+      COALESCE(max_offline_days, 4) AS max_offline_days
+    FROM licenses
+    WHERE id = ?
+      OR upper(license_id) = upper(?)
+    LIMIT 1
+  `)
+    .bind(
+      licenseRef,
+      licenseRef
+    )
+    .first();
+
+  if (!existing) {
+    return corsResponse({
+      ok: false,
+      code: "LICENSE_NOT_FOUND",
+      message: "No se encontró la licencia."
+    }, 404);
+  }
+
+  const previousDays = Number(existing.max_offline_days || 4);
+
+  await env.DB.prepare(`
+    UPDATE licenses
+    SET
+      max_offline_days = ?,
+      updated_at = ?
+    WHERE id = ?
+  `)
+    .bind(
+      normalizedDays,
+      nowIso,
+      existing.id
+    )
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      "temporary-admin",
+      "admin_license_offline_days_updated",
+      "licenses",
+      existing.id,
+      JSON.stringify({
+        licenseDbId: existing.id,
+        licenseId: existing.license_id,
+        licenseName: existing.license_name || "",
+        previousDays,
+        newDays: normalizedDays
+      }),
+      nowIso
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    message: "Días offline actualizados correctamente.",
+    license: {
+      id: existing.id,
+      licenseId: existing.license_id,
+      licenseName: existing.license_name || "",
+      previousMaxOfflineDays: previousDays,
+      maxOfflineDays: normalizedDays,
+      updatedAt: nowIso
+    }
+  });
+}
+
+
+
+
+  async function handleAdminLogin(request, env) {
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const email = normalizeAuthEmail(body.email || "");
+  const password = String(body.password || "");
+
+  const configuredEmail = normalizeAuthEmail(env.ADMIN_LOGIN_EMAIL || "");
+  const configuredPassword = String(env.ADMIN_LOGIN_PASSWORD || "");
+
+  if (!configuredEmail || !configuredPassword) {
+    return corsResponse({
+      ok: false,
+      code: "ADMIN_LOGIN_NOT_CONFIGURED",
+      message: "El acceso ADM no está configurado en el Worker."
+    }, 500);
+  }
+
+  if (!email || !password) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_CREDENTIALS",
+      message: "Ingrese correo y contraseña ADM."
+    }, 400);
+  }
+
+  if (email !== configuredEmail || !safeEqual(password, configuredPassword)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_ADMIN_CREDENTIALS",
+      message: "Correo o contraseña ADM incorrectos."
+    }, 401);
+  }
+
+  return corsResponse({
+    ok: true,
+    message: "Acceso ADM autorizado.",
+    session: "active"
+  });
+}
+
+async function handleAdminSessionValidate(request, env) {
+  let body = {};
+
+  try {
+    body = await request.json();
+  } catch {
+    body = {};
+  }
+
+  const session = String(body.session || "").trim();
+
+  if (session !== "active") {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_ADMIN_SESSION",
+      message: "Sesión ADM no válida."
+    }, 401);
+  }
+
+  return corsResponse({
+    ok: true,
+    message: "Sesión ADM válida."
+  });
 }
 
 

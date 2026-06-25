@@ -8,10 +8,41 @@ import BaseLayout from "../../layouts/BaseLayout.astro";
     <h1>Panel administrativo SEAZEP</h1>
     <p>Acceso privado para control de usuarios, empresas, softwares, manuales, licencias, activaciones y consultas de licencia.</p>
 
-    <form class="form-grid">
-      <input class="input" placeholder="Correo administrador" />
-      <input class="input" placeholder="Contraseña" type="password" />
-      <a class="btn btn-primary" href="/admin/dashboard">Entrar al panel</a>
-    </form>
+    <form class="form-grid" id="loginForm">
+  <input id="email" class="input" placeholder="Correo administrador" />
+  <input id="password" class="input" placeholder="Contraseña" type="password" />
+
+  <button class="btn btn-primary" type="submit">
+    Entrar al panel
+  </button>
+</form>
+
+  <script>
+document.getElementById("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
+
+  const res = await fetch("https://seazep-api.seazepfco.workers.dev/admin/login", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ email, password })
+  });
+
+  const data = await res.json();
+
+  if (data.ok) {
+    localStorage.setItem("admin_session", "active");
+
+    window.location.href = "/admin/dashboard?auth=1";
+  } else {
+    alert(data.message || "Acceso denegado");
+  }
+});
+</script>
+
   </main>
 </BaseLayout>
