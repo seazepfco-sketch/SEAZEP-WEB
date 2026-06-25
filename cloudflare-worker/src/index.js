@@ -209,6 +209,14 @@ if (url.pathname === "/user/manuals" && request.method === "GET") {
   return handleLicenseCheck(request, env);
 }
 
+
+
+  if (url.pathname === "/license/activity" && request.method === "POST") {
+  return handleLicenseActivity(request, env);
+}
+
+
+
     if (url.pathname === "/activation/register" && request.method === "POST") {
   return handleActivationRegister(request, env);
 }
@@ -6274,6 +6282,281 @@ function buildDeviceAlertItemsHtml(title, items = []) {
   `;
 }
 
+
+
+  async function handleLicenseActivity(request, env) {
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      allow: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no contiene JSON válido."
+    }, 400);
+  }
+
+  const licenseId = cleanText(body.licenseId || body.license_id || "", 80);
+  const productId = cleanText(body.productId || body.product_id || "", 120);
+  const productSlug = cleanText(body.productSlug || body.product_slug || "", 120);
+  const machineId = cleanText(body.machineId || body.machine_id || "", 160);
+  const eventType = cleanText(body.event || body.eventType || "heartbeat", 80);
+  const appVersion = cleanText(body.appVersion || body.app_version || "", 80);
+  const deviceLabel = cleanText(body.deviceLabel || body.device_label || "", 160);
+  const clientTimestamp = cleanText(body.timestamp || body.clientTimestamp || "", 80);
+
+  if (!licenseId) {
+    return corsResponse({
+      ok: false,
+      allow: false,
+      code: "LICENSE_REQUIRED",
+      message: "Falta licenseId."
+    }, 400);
+  }
+
+  if (!machineId) {
+    return corsResponse({
+      ok: false,
+      allow: false,
+      code: "MACHINE_REQUIRED",
+      message: "Falta machineId."
+    }, 400);
+  }
+
+  const now = new Date().toISOString();
+  const ipAddress = request.headers.get("cf-connecting-ip") || "";
+  const userAgent = request.headers.get("user-agent") || "";
+
+  const license = await env.DB.prepare(`
+    SELECT
+      l.id,
+      l.license_id,
+      l.license_name,
+      l.company_id,
+      l.product_id,
+      l.status,
+      l.starts_at,
+      l.expires_at,
+      l.max_devices,
+      COALESCE(l.max_offline_days, 4) AS max_offline_days,
+      c.name AS company_name,
+      c.status AS company_status,
+      sp.slug AS product_slug,
+      sp.name AS product_name,
+      sp.status AS product_status
+    FROM licenses l
+    LEFT JOIN companies c ON c.id = l.company_id
+    LEFT JOIN software_products sp ON sp.id = l.product_id
+    WHERE l.license_id = ?
+    LIMIT 1
+  `)
+    .bind(licenseId)
+    .first();
+
+  let result = "valid";
+  let allow = true;
+  let code = "ACTIVITY_ACCEPTED";
+  let message = "Actividad registrada correctamente.";
+
+  if (!license) {
+    result = "license_not_found";
+    allow = false;
+    code = "LICENSE_NOT_FOUND";
+    message = "Licencia no encontrada.";
+  }
+
+  if (license && productId && license.product_id !== productId) {
+    result = "product_not_match";
+    allow = false;
+    code = "PRODUCT_NOT_MATCH";
+    message = "La licencia no corresponde al producto indicado.";
+  }
+
+  if (license && productSlug && license.product_slug !== productSlug) {
+    result = "product_not_match";
+    allow = false;
+    code = "PRODUCT_NOT_MATCH";
+    message = "La licencia no corresponde al producto indicado.";
+  }
+
+  if (license && license.product_status !== "published") {
+    result = "product_not_published";
+    allow = false;
+    code = "PRODUCT_NOT_PUBLISHED";
+    message = "El producto no está publicado.";
+  }
+
+  if (license && license.company_status !== "active") {
+    result = "company_not_active";
+    allow = false;
+    code = "COMPANY_NOT_ACTIVE";
+    message = "La empresa asociada no está activa.";
+  }
+
+  if (license && license.status !== "active") {
+    result = `license_${license.status || "not_active"}`;
+    allow = false;
+    code = `LICENSE_${String(license.status || "not_active").toUpperCase()}`;
+    message = "La licencia no está activa.";
+  }
+
+  if (license && license.starts_at && new Date(license.starts_at) > new Date()) {
+    result = "license_not_started";
+    allow = false;
+    code = "LICENSE_NOT_STARTED";
+    message = "La licencia todavía no inicia.";
+  }
+
+  if (license && license.expires_at && new Date(license.expires_at) <= new Date()) {
+    result = "license_expired";
+    allow = false;
+    code = "LICENSE_EXPIRED";
+    message = "La licencia está vencida.";
+  }
+
+  let activation = null;
+
+  if (license) {
+    activation = await env.DB.prepare(`
+      SELECT
+        id,
+        status,
+        activated_at,
+        last_check_at,
+        device_label,
+        app_version
+      FROM license_activations
+      WHERE license_id = ?
+        AND machine_id = ?
+      ORDER BY activated_at DESC
+      LIMIT 1
+    `)
+      .bind(license.id, machineId)
+      .first();
+
+    if (!activation) {
+      result = "requires_activation";
+      allow = false;
+      code = "LICENSE_REQUIRES_ACTIVATION";
+      message = "El equipo requiere activación.";
+    }
+
+    if (activation && activation.status !== "active") {
+      result = `device_${activation.status || "not_active"}`;
+      allow = false;
+      code = `DEVICE_${String(activation.status || "not_active").toUpperCase()}`;
+      message = "El equipo no está activo.";
+    }
+  }
+
+  await env.DB.prepare(`
+    INSERT INTO license_activity_events (
+      id,
+      license_id,
+      license_db_id,
+      company_id,
+      product_id,
+      machine_id,
+      event_type,
+      result,
+      app_version,
+      device_label,
+      client_timestamp,
+      server_timestamp,
+      ip_address,
+      user_agent,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      licenseId,
+      license?.id || "",
+      license?.company_id || "",
+      license?.product_id || productId || "",
+      machineId,
+      eventType,
+      result,
+      appVersion,
+      deviceLabel,
+      clientTimestamp,
+      now,
+      ipAddress,
+      userAgent,
+      JSON.stringify({
+        allow,
+        code,
+        eventType,
+        companyName: license?.company_name || "",
+        productName: license?.product_name || "",
+        activationId: activation?.id || ""
+      }),
+      now
+    )
+    .run();
+
+  if (license && activation && activation.status === "active") {
+    await env.DB.prepare(`
+      UPDATE license_activations
+      SET
+        last_check_at = ?,
+        app_version = COALESCE(NULLIF(?, ''), app_version),
+        device_label = COALESCE(NULLIF(?, ''), device_label)
+      WHERE id = ?
+    `)
+      .bind(
+        now,
+        appVersion,
+        deviceLabel,
+        activation.id
+      )
+      .run();
+  }
+
+  return corsResponse({
+    ok: true,
+    allow,
+    code,
+    message,
+    checkedAt: now,
+    serverTimestamp: now,
+    maxOfflineDays: Number(license?.max_offline_days || 4),
+    activity: {
+      event: eventType,
+      result,
+      machineId
+    },
+    license: license ? {
+      id: license.id,
+      licenseId: license.license_id,
+      licenseName: license.license_name,
+      status: allow ? "active" : result,
+      startsAt: license.starts_at,
+      expiresAt: license.expires_at,
+      maxDevices: Number(license.max_devices || 1),
+      maxOfflineDays: Number(license.max_offline_days || 4)
+    } : null,
+    company: license ? {
+      id: license.company_id,
+      name: license.company_name,
+      status: license.company_status
+    } : null,
+    product: license ? {
+      id: license.product_id,
+      slug: license.product_slug,
+      name: license.product_name,
+      status: license.product_status
+    } : null,
+    device: {
+      machineId,
+      activated: Boolean(activation && activation.status === "active"),
+      activationStatus: activation?.status || "not_found"
+    }
+  });
+}
 
 
 
