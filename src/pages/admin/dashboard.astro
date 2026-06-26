@@ -374,43 +374,79 @@ try {
           </article>
         </div>
 
+        
+
         <div class="admin-filter-grid">
-          <label class="admin-filter-field">
-            <span>Código de licencia</span>
-            <input
-              class="input"
-              id="licenseOfflineIdInput"
-              name="smartpozo360_license_code"
-              placeholder="Ejemplo: SPZ-OZC7-NO22-6D6K"
-              autocomplete="off"
-              autocapitalize="characters"
-              spellcheck="false"
-              inputmode="text"
-            />
-          </label>
+  <label class="admin-filter-field">
+    <span>Código de licencia</span>
+    <input
+      class="input"
+      id="licenseOfflineIdInput"
+      name="smartpozo360_license_code"
+      placeholder="Ejemplo: SPZ-OZC7-NO22-6D6K"
+      autocomplete="off"
+      autocapitalize="characters"
+      spellcheck="false"
+      inputmode="text"
+    />
+  </label>
+
+  <label class="admin-filter-field">
+    <span>Días default por licencia</span>
+    <input
+      class="input"
+      id="licenseOfflineDaysInput"
+      type="number"
+      min="1"
+      max="30"
+      value="6"
+    />
+  </label>
+
+  <label class="admin-filter-field">
+    <span>Control general</span>
+    <button class="btn btn-primary" id="updateLicenseOfflineDaysButton" type="button">
+      Guardar días por licencia
+    </button>
+  </label>
+</div>
+
+<div class="admin-filter-grid admin-device-offline-grid">
+  <label class="admin-filter-field">
+    <span>ID de PC específica</span>
+    <input
+      class="input"
+      id="deviceOfflineMachineIdInput"
+      placeholder="Ejemplo: SPZ-HW-F44E-A15B-470E-6A2E"
+      autocomplete="off"
+      autocapitalize="characters"
+      spellcheck="false"
+      inputmode="text"
+    />
+  </label>
+
+  <label class="admin-filter-field">
+    <span>Días específicos por PC</span>
+    <input
+      class="input"
+      id="deviceOfflineDaysInput"
+      type="number"
+      min="1"
+      max="30"
+      placeholder="Ejemplo: 10"
+    />
+  </label>
+
+  <label class="admin-filter-field">
+    <span>Control por PC</span>
+    <button class="btn btn-secondary" id="updateDeviceOfflineDaysButton" type="button" disabled>
+      Próximo: guardar días por PC
+    </button>
+  </label>
+</div>
 
 
-          <label class="admin-filter-field">
-            <span>Días offline permitidos</span>
-            <input
-              class="input"
-              id="licenseOfflineDaysInput"
-              type="number"
-              min="1"
-              max="30"
-              value="4"
-            />
-          </label>
-
-          <label class="admin-filter-field">
-            <span>Control</span>
-            <button class="btn btn-primary" id="updateLicenseOfflineDaysButton" type="button">
-              Guardar días offline
-            </button>
-          </label>
-        </div>
-
-        <div class="admin-table-wrap">
+        <div class="admin-table-wrap admin-scroll-table admin-scroll-table-activity">
           <table class="admin-table">
             <thead>
               <tr>
@@ -470,7 +506,7 @@ try {
 </div>
         </div>
 
-        <div class="admin-table-wrap">
+        <div class="admin-table-wrap admin-scroll-table admin-scroll-table-requests">
           <table class="admin-table">
             <thead>
               <tr>
@@ -498,6 +534,58 @@ try {
   </main>
 
   <Footer />
+
+
+  <style>
+  .admin-scroll-table {
+    overflow-y: auto;
+    overflow-x: auto;
+    border-radius: 18px;
+    scrollbar-width: thin;
+  }
+
+  .admin-scroll-table-activity {
+    max-height: 720px;
+  }
+
+  .admin-scroll-table-requests {
+    max-height: 760px;
+  }
+
+  .admin-scroll-table .admin-table {
+    margin: 0;
+  }
+
+  .admin-scroll-table .admin-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: #06263b;
+    box-shadow: 0 1px 0 rgba(89, 222, 255, 0.25);
+  }
+
+  .admin-scroll-table::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .admin-scroll-table::-webkit-scrollbar-track {
+    background: rgba(4, 18, 35, 0.9);
+    border-radius: 999px;
+  }
+
+  .admin-scroll-table::-webkit-scrollbar-thumb {
+    background: rgba(89, 222, 255, 0.45);
+    border-radius: 999px;
+  }
+
+  .admin-scroll-table::-webkit-scrollbar-thumb:hover {
+    background: rgba(89, 222, 255, 0.75);
+  }
+</style>
+
+
+
 
   <script>
 const ADMIN_REQUESTS_BASE_URL = "https://seazep-api.seazepfco.workers.dev/admin/requests";
