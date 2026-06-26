@@ -439,9 +439,9 @@ try {
 
   <label class="admin-filter-field">
     <span>Control por PC</span>
-    <button class="btn btn-secondary" id="updateDeviceOfflineDaysButton" type="button" disabled>
-      Próximo: guardar días por PC
-    </button>
+    <button class="btn btn-secondary" id="updateDeviceOfflineDaysButton" type="button">
+  Guardar días por PC
+</button>
   </label>
 </div>
 
@@ -599,6 +599,7 @@ const ADMIN_LICENSE_CHECKS_URL = "https://seazep-api.seazepfco.workers.dev/admin
 
 const ADMIN_LICENSE_ACTIVITY_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-activity";
 const ADMIN_LICENSE_OFFLINE_DAYS_URL = "https://seazep-api.seazepfco.workers.dev/admin/licenses/update-offline-days";
+const ADMIN_DEVICE_OFFLINE_DAYS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-activations/update-offline-days";
 
 
 
@@ -634,8 +635,13 @@ const ADMIN_LICENSE_OFFLINE_DAYS_URL = "https://seazep-api.seazepfco.workers.dev
     const licenseActivityTableBody = document.getElementById("licenseActivityTableBody");
     const licenseActivityStatus = document.getElementById("licenseActivityStatus");
     const licenseOfflineIdInput = document.getElementById("licenseOfflineIdInput");
-    const licenseOfflineDaysInput = document.getElementById("licenseOfflineDaysInput");
-    const updateLicenseOfflineDaysButton = document.getElementById("updateLicenseOfflineDaysButton");
+const licenseOfflineDaysInput = document.getElementById("licenseOfflineDaysInput");
+const updateLicenseOfflineDaysButton = document.getElementById("updateLicenseOfflineDaysButton");
+
+const deviceOfflineMachineIdInput = document.getElementById("deviceOfflineMachineIdInput");
+const deviceOfflineDaysInput = document.getElementById("deviceOfflineDaysInput");
+const updateDeviceOfflineDaysButton = document.getElementById("updateDeviceOfflineDaysButton");
+
 
 
 
@@ -1624,6 +1630,117 @@ if (!Number.isFinite(maxOfflineDays) || maxOfflineDays < 1 || maxOfflineDays > 3
 
 
 
+    async function updateDeviceOfflineDays() {
+  const adminKey = getAdminKey();
+
+  if (!adminKey) {
+    setLicenseActivityStatus("Ingrese la clave ADM antes de actualizar días offline por PC.", "error");
+    return;
+  }
+
+  const licenseRef = String(licenseOfflineIdInput?.value || "").trim().toUpperCase();
+  const machineId = String(deviceOfflineMachineIdInput?.value || "").trim().toUpperCase();
+  const rawDays = String(deviceOfflineDaysInput?.value || "").trim();
+
+  if (!licenseRef) {
+    setLicenseActivityStatus("Ingrese el código de licencia. Ejemplo: SPZ-OZC7-NO22-6D6K.", "error");
+    return;
+  }
+
+  if (licenseRef.includes("@")) {
+    setLicenseActivityStatus("No use correo electrónico. Ingrese el código de licencia.", "error");
+    return;
+  }
+
+  if (!/^SPZ-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(licenseRef)) {
+    setLicenseActivityStatus("Formato de licencia no válido. Use un código como: SPZ-OZC7-NO22-6D6K.", "error");
+    return;
+  }
+
+  if (!machineId) {
+    setLicenseActivityStatus("Ingrese el ID de la PC. Ejemplo: SPZ-HW-F44E-A15B-470E-6A2E.", "error");
+    return;
+  }
+
+  if (machineId.includes("@")) {
+    setLicenseActivityStatus("No use correo electrónico. Ingrese el ID de la PC.", "error");
+    return;
+  }
+
+  if (!/^SPZ-HW-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(machineId)) {
+    setLicenseActivityStatus("Formato de ID de PC no válido. Use: SPZ-HW-F44E-A15B-470E-6A2E.", "error");
+    return;
+  }
+
+  const clearOverride = rawDays === "";
+  const maxOfflineDays = Number(rawDays);
+
+  if (
+    !clearOverride &&
+    (
+      !Number.isFinite(maxOfflineDays) ||
+      Math.trunc(maxOfflineDays) < 1 ||
+      Math.trunc(maxOfflineDays) > 30
+    )
+  ) {
+    setLicenseActivityStatus("Los días offline por PC deben estar entre 1 y 30. Si deja el campo vacío, se elimina la excepción.", "error");
+    return;
+  }
+
+  if (updateDeviceOfflineDaysButton) {
+    updateDeviceOfflineDaysButton.disabled = true;
+  }
+
+  try {
+    setLicenseActivityStatus("Actualizando días offline específicos por PC...");
+
+    const payload = {
+      licenseId: licenseRef,
+      machineId,
+      clearOverride
+    };
+
+    if (!clearOverride) {
+      payload.maxOfflineDays = Math.trunc(maxOfflineDays);
+    }
+
+    const response = await fetch(ADMIN_DEVICE_OFFLINE_DAYS_URL, {
+      method: "POST",
+      mode: "cors",
+      headers: {
+        "x-admin-key": adminKey,
+        "content-type": "text/plain;charset=UTF-8"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.ok) {
+      throw new Error(result.message || "No se pudieron actualizar los días offline por PC.");
+    }
+
+    setLicenseActivityStatus(
+      clearOverride
+        ? "Excepción por PC eliminada. Esta PC usará los días default de la licencia."
+        : `Días offline por PC actualizados: ${result.device?.effectiveMaxOfflineDays || Math.trunc(maxOfflineDays)} día(s).`,
+      "success"
+    );
+
+    await loadLicenseActivity();
+  } catch (error) {
+    setLicenseActivityStatus(error.message || "Error al actualizar días offline por PC.", "error");
+  } finally {
+    if (updateDeviceOfflineDaysButton) {
+      updateDeviceOfflineDaysButton.disabled = false;
+    }
+  }
+}
+
+
+
+
+
     async function loadRequests() {
   if (!keyInput) return;
 
@@ -1732,7 +1849,8 @@ clearFiltersButton?.addEventListener("click", () => {
 
      refreshLicenseActivityButton?.addEventListener("click", loadLicenseActivity);
     updateLicenseOfflineDaysButton?.addEventListener("click", updateLicenseOfflineDays);
-
+    updateDeviceOfflineDaysButton?.addEventListener("click", updateDeviceOfflineDays);
+    
 
     tableBody?.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-request-id]");

@@ -241,6 +241,10 @@ if (url.pathname === "/admin/licenses/update-offline-days" && request.method ===
 }
 
 
+if (url.pathname === "/admin/license-activations/update-offline-days" && request.method === "POST") {
+  return handleAdminUpdateDeviceOfflineDays(request, env);
+}
+
 
 
     return corsResponse({
@@ -6839,23 +6843,24 @@ function buildDeviceAlertItemsHtml(title, items = []) {
   
     if (machineId) {
     activation = await env.DB.prepare(`
-      SELECT
-        id,
-        license_id,
-        product_id,
-        company_id,
-        machine_id,
-        device_label,
-        app_version,
-        status,
-        activated_at,
-        last_check_at
-      FROM license_activations
-      WHERE license_id = ?
-        AND machine_id = ?
-      ORDER BY activated_at DESC
-      LIMIT 1
-    `)
+  SELECT
+    id,
+    license_id,
+    product_id,
+    company_id,
+    machine_id,
+    device_label,
+    app_version,
+    status,
+    activated_at,
+    last_check_at,
+    max_offline_days_override
+  FROM license_activations
+  WHERE license_id = ?
+    AND machine_id = ?
+  ORDER BY activated_at DESC
+  LIMIT 1
+`)
       .bind(license.license_db_id, machineId)
       .first();
 
@@ -6922,15 +6927,34 @@ function buildDeviceAlertItemsHtml(title, items = []) {
 
 
   await recordLicenseCheck(env, {
-    licenseId: license.license_id,
-    companyId: license.company_id || null,
-    productId: license.product_id || null,
-    machineId,
-    checkType,
-    result,
-    ipAddress,
-    userAgent
-  });
+  licenseId: license.license_id,
+  companyId: license.company_id || null,
+  productId: license.product_id || null,
+  machineId,
+  checkType,
+  result,
+  ipAddress,
+  userAgent
+});
+
+const defaultMaxOfflineDays = Number(license.max_offline_days || 4);
+const overrideMaxOfflineDaysRaw = activation?.max_offline_days_override;
+const overrideMaxOfflineDays = Number(overrideMaxOfflineDaysRaw);
+
+const hasValidOfflineOverride =
+  overrideMaxOfflineDaysRaw !== null &&
+  overrideMaxOfflineDaysRaw !== undefined &&
+  overrideMaxOfflineDaysRaw !== "" &&
+  Number.isFinite(overrideMaxOfflineDays) &&
+  overrideMaxOfflineDays >= 1 &&
+  overrideMaxOfflineDays <= 30;
+
+const effectiveMaxOfflineDays = hasValidOfflineOverride
+  ? Math.trunc(overrideMaxOfflineDays)
+  : Math.trunc(defaultMaxOfflineDays);
+
+
+
 
   return corsResponse({
     ok: true,
@@ -6939,16 +6963,18 @@ function buildDeviceAlertItemsHtml(title, items = []) {
     message,
     checkedAt: nowIso,
     license: {
-      id: license.license_db_id,
-      licenseId: license.license_id,
-      licenseName: license.license_name || "",
-      status: valid ? license.status : result,
-      startsAt: license.starts_at || "",
-      expiresAt: license.expires_at || "",
-      maxUsers: Number(license.max_users || 1),
-      maxDevices: Number(license.max_devices || 1),
-      maxOfflineDays: Number(license.max_offline_days || 4)
-    },
+  id: license.license_db_id,
+  licenseId: license.license_id,
+  licenseName: license.license_name || "",
+  status: valid ? license.status : result,
+  startsAt: license.starts_at || "",
+  expiresAt: license.expires_at || "",
+  maxUsers: Number(license.max_users || 1),
+  maxDevices: Number(license.max_devices || 1),
+  maxOfflineDays: effectiveMaxOfflineDays,
+  maxOfflineDaysDefault: Math.trunc(defaultMaxOfflineDays),
+  maxOfflineDaysOverride: hasValidOfflineOverride ? Math.trunc(overrideMaxOfflineDays) : null
+},
     product: {
       id: license.product_id,
       slug: license.product_slug,
@@ -6961,13 +6987,15 @@ function buildDeviceAlertItemsHtml(title, items = []) {
       status: license.company_status || ""
     },
     device: {
-      machineId,
-      activated: Boolean(activation && activation.status === "active"),
-      activationStatus: activation?.status || "",
-      activeActivations,
-      requiresActivation,
-      canActivate
-    }
+  machineId,
+  activated: Boolean(activation && activation.status === "active"),
+  activationStatus: activation?.status || "",
+  activeActivations,
+  requiresActivation,
+  canActivate,
+  maxOfflineDays: effectiveMaxOfflineDays,
+  maxOfflineDaysOverride: hasValidOfflineOverride ? Math.trunc(overrideMaxOfflineDays) : null
+}
   });
 }
 
@@ -7929,6 +7957,246 @@ async function handleAdminUpdateLicenseOfflineDays(request, env) {
     }
   });
 }
+
+
+
+
+async function handleAdminUpdateDeviceOfflineDays(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const licenseRef = cleanText(
+    body.id ||
+      body.licenseDbId ||
+      body.license_db_id ||
+      body.licenseId ||
+      body.license_id ||
+      body.licenseCode ||
+      body.license_code ||
+      "",
+    120
+  );
+
+  const machineId = cleanText(
+    body.machineId || body.machine_id || "",
+    180
+  ).toUpperCase();
+
+  const rawDays =
+    body.maxOfflineDays ??
+    body.max_offline_days ??
+    body.days ??
+    "";
+
+  const clearOverride =
+    body.clearOverride === true ||
+    String(rawDays || "").trim() === "";
+
+  const maxOfflineDays = Number(rawDays);
+
+  if (!licenseRef) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_LICENSE",
+      message: "Falta el ID interno o código de licencia."
+    }, 400);
+  }
+
+  if (!machineId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_MACHINE_ID",
+      message: "Falta el ID de la PC."
+    }, 400);
+  }
+
+  if (machineId.includes("@")) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_MACHINE_ID",
+      message: "No use correo electrónico. Ingrese el ID de la PC."
+    }, 400);
+  }
+
+  if (
+    !/^SPZ-HW-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(machineId)
+  ) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_MACHINE_ID",
+      message: "Formato de ID de PC no válido. Use un valor como SPZ-HW-F44E-A15B-470E-6A2E."
+    }, 400);
+  }
+
+  if (
+    !clearOverride &&
+    (
+      !Number.isFinite(maxOfflineDays) ||
+      Math.trunc(maxOfflineDays) < 1 ||
+      Math.trunc(maxOfflineDays) > 30
+    )
+  ) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_MAX_OFFLINE_DAYS",
+      message: "Los días offline por PC deben estar entre 1 y 30."
+    }, 400);
+  }
+
+  const normalizedDays = clearOverride ? null : Math.trunc(maxOfflineDays);
+  const nowIso = new Date().toISOString();
+
+  const license = await env.DB.prepare(`
+    SELECT
+      id,
+      license_id,
+      license_name,
+      company_id,
+      COALESCE(max_offline_days, 4) AS max_offline_days
+    FROM licenses
+    WHERE id = ?
+      OR upper(license_id) = upper(?)
+    LIMIT 1
+  `)
+    .bind(
+      licenseRef,
+      licenseRef
+    )
+    .first();
+
+  if (!license) {
+    return corsResponse({
+      ok: false,
+      code: "LICENSE_NOT_FOUND",
+      message: "No se encontró la licencia."
+    }, 404);
+  }
+
+  const activation = await env.DB.prepare(`
+    SELECT
+      id,
+      license_id,
+      machine_id,
+      device_label,
+      app_version,
+      status,
+      max_offline_days_override
+    FROM license_activations
+    WHERE license_id = ?
+      AND upper(machine_id) = upper(?)
+    ORDER BY activated_at DESC
+    LIMIT 1
+  `)
+    .bind(
+      license.id,
+      machineId
+    )
+    .first();
+
+  if (!activation) {
+    return corsResponse({
+      ok: false,
+      code: "ACTIVATION_NOT_FOUND",
+      message: "No se encontró una activación para esa licencia y PC."
+    }, 404);
+  }
+
+  const previousOverride = activation.max_offline_days_override;
+  const defaultDays = Number(license.max_offline_days || 4);
+  const effectiveDays = normalizedDays || defaultDays;
+
+  await env.DB.prepare(`
+    UPDATE license_activations
+    SET
+      max_offline_days_override = ?
+    WHERE id = ?
+  `)
+    .bind(
+      normalizedDays,
+      activation.id
+    )
+    .run();
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      "temporary-admin",
+      "admin_device_offline_days_updated",
+      "license_activations",
+      activation.id,
+      JSON.stringify({
+        licenseDbId: license.id,
+        licenseId: license.license_id,
+        licenseName: license.license_name || "",
+        machineId,
+        deviceLabel: activation.device_label || "",
+        previousOverrideDays: previousOverride === null || previousOverride === undefined
+          ? null
+          : Number(previousOverride),
+        newOverrideDays: normalizedDays,
+        defaultLicenseDays: defaultDays,
+        effectiveDays,
+        clearedOverride: clearOverride
+      }),
+      nowIso
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    message: clearOverride
+      ? "Excepción offline por PC eliminada. El equipo usará los días default de la licencia."
+      : "Días offline por PC actualizados correctamente.",
+    license: {
+      id: license.id,
+      licenseId: license.license_id,
+      licenseName: license.license_name || "",
+      defaultMaxOfflineDays: defaultDays
+    },
+    device: {
+      activationId: activation.id,
+      machineId,
+      deviceLabel: activation.device_label || "",
+      status: activation.status || "",
+      previousMaxOfflineDaysOverride: previousOverride === null || previousOverride === undefined
+        ? null
+        : Number(previousOverride),
+      maxOfflineDaysOverride: normalizedDays,
+      effectiveMaxOfflineDays: effectiveDays,
+      updatedAt: nowIso
+    }
+  });
+}
+
 
 
 
