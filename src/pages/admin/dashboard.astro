@@ -376,13 +376,19 @@ try {
 
         <div class="admin-filter-grid">
           <label class="admin-filter-field">
-            <span>Licencia / ID interno</span>
+            <span>Código de licencia</span>
             <input
               class="input"
               id="licenseOfflineIdInput"
+              name="smartpozo360_license_code"
               placeholder="Ejemplo: SPZ-OZC7-NO22-6D6K"
+              autocomplete="off"
+              autocapitalize="characters"
+              spellcheck="false"
+              inputmode="text"
             />
           </label>
+
 
           <label class="admin-filter-field">
             <span>Días offline permitidos</span>
@@ -1462,18 +1468,29 @@ async function updateRequestStatus(id, status) {
         return;
       }
 
-      const licenseRef = String(licenseOfflineIdInput?.value || "").trim();
-      const maxOfflineDays = Number(licenseOfflineDaysInput?.value || 4);
+      const licenseRef = String(licenseOfflineIdInput?.value || "").trim().toUpperCase();
+const maxOfflineDays = Number(licenseOfflineDaysInput?.value || 4);
 
-      if (!licenseRef) {
-        setLicenseActivityStatus("Ingrese el código o ID interno de la licencia.", "error");
-        return;
-      }
+if (!licenseRef) {
+  setLicenseActivityStatus("Ingrese el código de licencia. Ejemplo: SPZ-OZC7-NO22-6D6K.", "error");
+  return;
+}
 
-      if (!Number.isFinite(maxOfflineDays) || maxOfflineDays < 1 || maxOfflineDays > 30) {
-        setLicenseActivityStatus("Los días offline deben estar entre 1 y 30.", "error");
-        return;
-      }
+if (licenseRef.includes("@")) {
+  setLicenseActivityStatus("No use correo electrónico. Ingrese el código de licencia, por ejemplo: SPZ-OZC7-NO22-6D6K.", "error");
+  return;
+}
+
+if (!/^SPZ-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(licenseRef)) {
+  setLicenseActivityStatus("Formato de licencia no válido. Use un código como: SPZ-OZC7-NO22-6D6K.", "error");
+  return;
+}
+
+if (!Number.isFinite(maxOfflineDays) || maxOfflineDays < 1 || maxOfflineDays > 30) {
+  setLicenseActivityStatus("Los días offline deben estar entre 1 y 30.", "error");
+  return;
+}
+
 
       if (updateLicenseOfflineDaysButton) {
         updateLicenseOfflineDaysButton.disabled = true;
