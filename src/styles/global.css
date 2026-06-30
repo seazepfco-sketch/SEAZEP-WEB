@@ -2087,3 +2087,218 @@ sers\azada\Documents\PROYECTOS_SOFTWARE\SEAZEP\SEAZEP-WEB\src\styles\global.css
 }
 
 
+
+/* =====================================================
+   SEAZEP ADM LICENCIAS — SCROLL INTERNO EXTRA
+   Licencias por empresa, licencias registradas y activaciones
+   ===================================================== */
+
+/*
+  Licencias por empresa:
+  Muestra aprox. 10 empresas visibles.
+  El resto queda dentro de scroll vertical.
+*/
+.company-license-report-section .admin-table-wrap {
+  max-height: 760px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+/*
+  Licencias registradas:
+  Esta sección no tiene clase propia en el HTML,
+  por eso se detecta por la tabla que contiene #licensesTableBody.
+  Muestra aprox. 10 licencias visibles.
+*/
+.admin-table-wrap:has(#licensesTableBody) {
+  max-height: 760px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+/*
+  Activaciones por licencia:
+  Muestra aprox. 5 equipos visibles.
+  El resto queda dentro de scroll vertical.
+*/
+.license-activations-section .admin-table-wrap {
+  max-height: 560px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+/*
+  Encabezados fijos dentro del scroll.
+  Así se mantienen visibles los títulos de columnas.
+*/
+.company-license-report-section .admin-table thead th,
+.admin-table-wrap:has(#licensesTableBody) .admin-table thead th,
+.license-activations-section .admin-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/*
+  Scroll visual uniforme para estas nuevas secciones.
+*/
+.company-license-report-section .admin-table-wrap::-webkit-scrollbar,
+.admin-table-wrap:has(#licensesTableBody)::-webkit-scrollbar,
+.license-activations-section .admin-table-wrap::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.company-license-report-section .admin-table-wrap::-webkit-scrollbar-thumb,
+.admin-table-wrap:has(#licensesTableBody)::-webkit-scrollbar-thumb,
+.license-activations-section .admin-table-wrap::-webkit-scrollbar-thumb {
+  background: rgba(34, 211, 238, 0.38);
+  border-radius: 999px;
+}
+
+.company-license-report-section .admin-table-wrap::-webkit-scrollbar-track,
+.admin-table-wrap:has(#licensesTableBody)::-webkit-scrollbar-track,
+.license-activations-section .admin-table-wrap::-webkit-scrollbar-track {
+  background: rgba(2, 6, 23, 0.45);
+  border-radius: 999px;
+}
+
+
+
+/* =====================================================
+   SEAZEP ADM EMPRESAS — SCROLL INTERNO
+   Clientes y prospectos SEAZEP
+   ===================================================== */
+
+/*
+  Clientes y prospectos SEAZEP:
+  Muestra aprox. 10 empresas visibles.
+  El resto queda dentro de scroll vertical.
+*/
+.admin-table-wrap:has(#companiesTableBody) {
+  max-height: 760px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+/*
+  Encabezado fijo dentro del scroll.
+*/
+.admin-table-wrap:has(#companiesTableBody) .admin-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/*
+  Scroll visual uniforme.
+*/
+.admin-table-wrap:has(#companiesTableBody)::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.admin-table-wrap:has(#companiesTableBody)::-webkit-scrollbar-thumb {
+  background: rgba(34, 211, 238, 0.38);
+  border-radius: 999px;
+}
+
+.admin-table-wrap:has(#companiesTableBody)::-webkit-scrollbar-track {
+  background: rgba(2, 6, 23, 0.45);
+  border-radius: 999px;
+}
+
+
+
+/* =====================================================
+   SEAZEP ADM MANUALES — SCROLL INTERNO
+   Recursos técnicos disponibles
+   ===================================================== */
+
+/*
+  Recursos técnicos disponibles:
+  Muestra aprox. 10 manuales visibles.
+  El resto queda dentro de scroll vertical.
+*/
+.admin-table-wrap:has(#manualsTableBody) {
+  max-height: 760px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+/*
+  Encabezado fijo dentro del scroll.
+*/
+.admin-table-wrap:has(#manualsTableBody) .admin-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/*
+  Scroll visual uniforme.
+*/
+.admin-table-wrap:has(#manualsTableBody)::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.admin-table-wrap:has(#manualsTableBody)::-webkit-scrollbar-thumb {
+  background: rgba(34, 211, 238, 0.38);
+  border-radius: 999px;
+}
+
+.admin-table-wrap:has(#manualsTableBody)::-webkit-scrollbar-track {
+  background: rgba(2, 6, 23, 0.45);
+  border-radius: 999px;
+}
+
+
+
+/* =====================================================
+   SEAZEP ADM USUARIOS — SCROLL INTERNO
+   Cuentas creadas desde SEAZEP-WEB
+   ===================================================== */
+
+/*
+  Cuentas creadas desde SEAZEP-WEB:
+  Muestra aprox. 10 usuarios visibles.
+  El resto queda dentro de scroll vertical.
+*/
+.admin-table-wrap:has(#usersTableBody) {
+  max-height: 760px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+/*
+  Encabezado fijo dentro del scroll.
+*/
+.admin-table-wrap:has(#usersTableBody) .admin-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/*
+  Scroll visual uniforme.
+*/
+.admin-table-wrap:has(#usersTableBody)::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.admin-table-wrap:has(#usersTableBody)::-webkit-scrollbar-thumb {
+  background: rgba(34, 211, 238, 0.38);
+  border-radius: 999px;
+}
+
+.admin-table-wrap:has(#usersTableBody)::-webkit-scrollbar-track {
+  background: rgba(2, 6, 23, 0.45);
+  border-radius: 999px;
+}
+
+
+
+
+
