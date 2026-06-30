@@ -2010,3 +2010,80 @@ sers\azada\Documents\PROYECTOS_SOFTWARE\SEAZEP\SEAZEP-WEB\src\styles\global.css
     grid-template-columns: 1fr;
   }
 }
+
+
+
+/* =====================================================
+   SEAZEP ADM LICENCIAS — SCROLL INTERNO DE HISTORIALES
+   Ajuste FASE 33
+   ===================================================== */
+
+/*
+  Historial de validaciones:
+  Muestra aprox. 10 registros visibles.
+  El resto queda disponible con scroll vertical.
+*/
+.license-checks-section .admin-table-wrap {
+  max-height: 760px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+/*
+  Historial de cambios de licencias:
+  Muestra aprox. 10 registros visibles.
+  El resto queda disponible con scroll vertical.
+*/
+.license-audit-section .admin-table-wrap {
+  max-height: 760px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+/*
+  Encabezados fijos dentro del scroll.
+  Así, al bajar dentro de la tabla, los títulos de columnas se mantienen visibles.
+*/
+.license-checks-section .admin-table thead th,
+.license-audit-section .admin-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/*
+  Alertas comerciales y técnicas:
+  Solo el bloque interno "Bloqueos por límite" tendrá scroll.
+  Muestra aprox. 4 bloqueos visibles.
+*/
+#deviceLimitBlocksList {
+  max-height: 430px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+/*
+  Separación visual suave dentro del scroll de bloqueos.
+*/
+#deviceLimitBlocksList::-webkit-scrollbar,
+.license-checks-section .admin-table-wrap::-webkit-scrollbar,
+.license-audit-section .admin-table-wrap::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+#deviceLimitBlocksList::-webkit-scrollbar-thumb,
+.license-checks-section .admin-table-wrap::-webkit-scrollbar-thumb,
+.license-audit-section .admin-table-wrap::-webkit-scrollbar-thumb {
+  background: rgba(34, 211, 238, 0.38);
+  border-radius: 999px;
+}
+
+#deviceLimitBlocksList::-webkit-scrollbar-track,
+.license-checks-section .admin-table-wrap::-webkit-scrollbar-track,
+.license-audit-section .admin-table-wrap::-webkit-scrollbar-track {
+  background: rgba(2, 6, 23, 0.45);
+  border-radius: 999px;
+}
+
+

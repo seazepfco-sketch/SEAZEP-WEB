@@ -6515,19 +6515,20 @@ function buildDeviceAlertItemsHtml(title, items = []) {
 
   if (license) {
     activation = await env.DB.prepare(`
-      SELECT
-        id,
-        status,
-        activated_at,
-        last_check_at,
-        device_label,
-        app_version
-      FROM license_activations
-      WHERE license_id = ?
-        AND machine_id = ?
-      ORDER BY activated_at DESC
-      LIMIT 1
-    `)
+  SELECT
+    id,
+    status,
+    activated_at,
+    last_check_at,
+    device_label,
+    app_version,
+    max_offline_days_override
+  FROM license_activations
+  WHERE license_id = ?
+    AND machine_id = ?
+  ORDER BY activated_at DESC
+  LIMIT 1
+`)
       .bind(
         license.license_db_id,
         machineId
@@ -6594,10 +6595,27 @@ function buildDeviceAlertItemsHtml(title, items = []) {
       .run();
   }
 
-  const maxOfflineDays = Number(license?.max_offline_days || 4);
-  const nextRequiredBefore = new Date(
-    now.getTime() + (maxOfflineDays * 24 * 60 * 60 * 1000)
-  ).toISOString();
+  const defaultMaxOfflineDays = Number(license?.max_offline_days || 4);
+const overrideMaxOfflineDaysRaw = activation?.max_offline_days_override;
+const overrideMaxOfflineDays = Number(overrideMaxOfflineDaysRaw);
+
+const hasValidOfflineOverride =
+  overrideMaxOfflineDaysRaw !== null &&
+  overrideMaxOfflineDaysRaw !== undefined &&
+  overrideMaxOfflineDaysRaw !== "" &&
+  Number.isFinite(overrideMaxOfflineDays) &&
+  overrideMaxOfflineDays >= 1 &&
+  overrideMaxOfflineDays <= 30;
+
+const maxOfflineDays = hasValidOfflineOverride
+  ? Math.trunc(overrideMaxOfflineDays)
+  : Math.trunc(defaultMaxOfflineDays);
+
+const nextRequiredBefore = new Date(
+  now.getTime() + (maxOfflineDays * 24 * 60 * 60 * 1000)
+).toISOString();
+
+
 
   return corsResponse({
     ok: true,
@@ -6615,15 +6633,17 @@ function buildDeviceAlertItemsHtml(title, items = []) {
       machineId
     },
     license: license ? {
-      id: license.license_db_id,
-      licenseId: license.license_id,
-      licenseName: license.license_name || "",
-      status: allow ? "active" : result,
-      startsAt: license.starts_at || "",
-      expiresAt: license.expires_at || "",
-      maxDevices: Number(license.max_devices || 1),
-      maxOfflineDays
-    } : null,
+  id: license.license_db_id,
+  licenseId: license.license_id,
+  licenseName: license.license_name || "",
+  status: allow ? "active" : result,
+  startsAt: license.starts_at || "",
+  expiresAt: license.expires_at || "",
+  maxDevices: Number(license.max_devices || 1),
+  maxOfflineDays,
+  maxOfflineDaysDefault: Math.trunc(defaultMaxOfflineDays),
+  maxOfflineDaysOverride: hasValidOfflineOverride ? Math.trunc(overrideMaxOfflineDays) : null
+} : null,
     company: license ? {
       id: license.company_id || "",
       name: license.company_name || "",
@@ -6636,10 +6656,12 @@ function buildDeviceAlertItemsHtml(title, items = []) {
       status: license.product_status || ""
     } : null,
     device: {
-      machineId,
-      activated: Boolean(activation && activation.status === "active"),
-      activationStatus: activation?.status || "not_found"
-    }
+  machineId,
+  activated: Boolean(activation && activation.status === "active"),
+  activationStatus: activation?.status || "not_found",
+  maxOfflineDays,
+  maxOfflineDaysOverride: hasValidOfflineOverride ? Math.trunc(overrideMaxOfflineDays) : null
+}
   });
 }
 
