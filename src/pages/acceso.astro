@@ -114,6 +114,8 @@ import SectionTitle from "../components/SectionTitle.astro";
             throw new Error(result.message || "No se pudo iniciar sesión.");
           }
 
+          localStorage.removeItem("admin_session");
+          
           localStorage.setItem("seazep_session_token", result.token);
           localStorage.setItem("seazep_session_expires_at", result.expiresAt);
           localStorage.setItem("seazep_user", JSON.stringify(result.user));

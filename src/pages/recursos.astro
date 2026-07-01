@@ -20,23 +20,61 @@ import SectionTitle from "../components/SectionTitle.astro";
         <span class="eyebrow">SmartPozo360</span>
         <h3>Manual de operación</h3>
         <p>Documento para usuarios autorizados. Descarga protegida futura desde panel privado.</p>
-        <a class="btn btn-ghost" href="/acceso">Iniciar sesión</a>
+        <a class="btn btn-ghost protected-resource-link" href="/acceso">Iniciar sesión</a>
       </article>
 
       <article class="card">
         <span class="eyebrow">SmartPozo360</span>
         <h3>Guía de instalación</h3>
         <p>Procedimiento de instalación, activación, vigencia, respaldo y uso básico.</p>
-        <a class="btn btn-ghost" href="/acceso">Iniciar sesión</a>
+        <a class="btn btn-ghost protected-resource-link" href="/acceso">Iniciar sesión</a>
       </article>
 
       <article class="card">
         <span class="eyebrow">SEAZEP</span>
         <h3>Documentación técnica</h3>
         <p>Espacio para guías de servicios, criterios técnicos, formatos de campo y materiales de capacitación.</p>
-        <a class="btn btn-ghost" href="/registro">Registrarse</a>
+        <a class="btn btn-ghost protected-resource-link" href="/registro">Registrarse</a>
       </article>
     </div>
+
+       <script>
+    function hasActiveSeazepUserSession() {
+      try {
+        const token = localStorage.getItem("seazep_session_token");
+        const expiresAt = localStorage.getItem("seazep_session_expires_at");
+        const rawUser = localStorage.getItem("seazep_user");
+
+        if (!token || !expiresAt || !rawUser) {
+          return false;
+        }
+
+        const expiresDate = new Date(expiresAt);
+
+        if (Number.isNaN(expiresDate.getTime()) || expiresDate <= new Date()) {
+          localStorage.removeItem("seazep_user");
+          localStorage.removeItem("seazep_session_token");
+          localStorage.removeItem("seazep_session_expires_at");
+          return false;
+        }
+
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    const protectedResourceLinks = document.querySelectorAll(".protected-resource-link");
+
+    if (hasActiveSeazepUserSession()) {
+      protectedResourceLinks.forEach((link) => {
+        link.setAttribute("href", "/app/dashboard");
+        link.textContent = "Abrir mi panel";
+      });
+    }
+  </script>
+
+
   </main>
 
   <Footer />

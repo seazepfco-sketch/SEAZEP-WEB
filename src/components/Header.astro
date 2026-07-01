@@ -17,6 +17,25 @@ const active = Astro.props.active || "";
     <a class={active === "softwares" ? "active" : ""} href="/softwares">Softwares</a>
     <a class={active === "recursos" ? "active" : ""} href="/recursos">Recursos</a>
     <a class={active === "contacto" ? "active" : ""} href="/contacto">Contacto</a>
+    <div class="admin-nav-dropdown" id="headerAdminButton" hidden>
+  <button class={active === "admin" ? "active admin-nav-trigger" : "admin-nav-trigger"} type="button">
+    Panel ADM
+  </button>
+
+  <div class="admin-nav-menu" aria-label="Menú administrativo SEAZEP">
+    <a href="/admin/dashboard">Dashboard principal</a>
+    <a href="/admin/licencias">Licencias</a>
+    <a href="/admin/empresas">Empresas</a>
+    <a href="/admin/usuarios">Usuarios</a>
+    <a href="/admin/manuales">Manuales</a>
+    <a href="/admin/descargas-manuales">Descargas manuales</a>
+
+    <button class="admin-nav-logout" type="button" id="headerAdminLogoutButton">Cerrar sesión ADM</button>
+
+  </div>
+</div>
+
+
   </nav>
 
   <div class="nav-actions">
@@ -46,8 +65,11 @@ const active = Astro.props.active || "";
   const headerUserEmail = document.getElementById("headerUserEmail");
   const headerLogoutButton = document.getElementById("headerLogoutButton");
   const headerAccessButton = document.getElementById("headerAccessButton");
-
+  const headerAdminButton = document.getElementById("headerAdminButton");
+  const headerAdminLogoutButton = document.getElementById("headerAdminLogoutButton");
   const headerRegisterButton = document.getElementById("headerRegisterButton");
+
+
 
   function getStoredSeazepUser() {
     try {
@@ -76,13 +98,20 @@ const active = Astro.props.active || "";
 
   function renderHeaderSession() {
     const user = getStoredSeazepUser();
+    const hasAdminSession = localStorage.getItem("admin_session") === "active";
 
     if (!user) {
   if (headerUserBox) headerUserBox.hidden = true;
   if (headerAccessButton) headerAccessButton.hidden = false;
   if (headerRegisterButton) headerRegisterButton.hidden = false;
+  if (headerAdminButton) headerAdminButton.hidden = !hasAdminSession;
   return;
 }
+
+    if (headerAdminButton) {
+      headerAdminButton.hidden = true;
+    }
+
 
     if (headerUserName) {
       headerUserName.textContent = user.fullName || "Usuario SEAZEP";
@@ -113,6 +142,16 @@ const active = Astro.props.active || "";
 
     window.location.href = "/acceso";
   });
+
+  headerAdminLogoutButton?.addEventListener("click", () => {
+  localStorage.removeItem("admin_session");
+
+  if (headerAdminButton) {
+    headerAdminButton.hidden = true;
+  }
+
+  window.location.href = "/acceso";
+});
 
   renderHeaderSession();
 </script>

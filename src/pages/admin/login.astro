@@ -35,6 +35,10 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
   const data = await res.json();
 
   if (data.ok) {
+    localStorage.removeItem("seazep_user");
+    localStorage.removeItem("seazep_session_token");
+    localStorage.removeItem("seazep_session_expires_at");
+
     localStorage.setItem("admin_session", "active");
 
     window.location.href = "/admin/dashboard?auth=1";
