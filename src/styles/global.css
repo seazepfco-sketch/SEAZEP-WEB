@@ -2426,3 +2426,24 @@ sers\azada\Documents\PROYECTOS_SOFTWARE\SEAZEP\SEAZEP-WEB\src\styles\global.css
 }
 
 
+/* =====================================================
+   SEAZEP ADM — ACCESO OPERATIVO GUARDADO
+   ===================================================== */
+
+.admin-access-panel.admin-access-panel-ready {
+  border-color: rgba(34, 197, 94, .32);
+  background:
+    linear-gradient(135deg, rgba(22, 163, 74, .12), rgba(8, 47, 73, .18)),
+    rgba(15, 23, 42, .74);
+}
+
+.admin-access-panel.admin-access-panel-ready #adminApiKey {
+  border-color: rgba(34, 197, 94, .38);
+  background: rgba(2, 44, 34, .42);
+}
+
+.admin-access-panel.admin-access-panel-ready #adminApiKey::placeholder {
+  color: rgba(187, 247, 208, .78);
+}
+
+

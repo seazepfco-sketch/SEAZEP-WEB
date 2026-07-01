@@ -145,6 +145,7 @@ const active = Astro.props.active || "";
 
   headerAdminLogoutButton?.addEventListener("click", () => {
   localStorage.removeItem("admin_session");
+  localStorage.removeItem("seazep_admin_api_key");
 
   if (headerAdminButton) {
     headerAdminButton.hidden = true;
