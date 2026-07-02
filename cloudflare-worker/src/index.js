@@ -152,6 +152,11 @@ if (url.pathname === "/admin/licenses" && request.method === "POST") {
   return handleAdminCreateLicense(request, env);
 }
 
+if (url.pathname === "/admin/licenses/generate-spzlic" && request.method === "POST") {
+  return handleAdminGenerateSpzlic(request, env);
+}
+
+
 if (url.pathname === "/admin/licenses/update-status" && request.method === "POST") {
   return handleAdminUpdateLicenseStatus(request, env);
 }
@@ -4688,6 +4693,403 @@ async function handleAdminCreateLicense(request, env) {
     }
   }, 201);
 }
+
+
+
+
+async function handleAdminGenerateSpzlic(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  let body;
+
+  try {
+    body = await request.json();
+  } catch {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_JSON",
+      message: "La solicitud no tiene un JSON válido."
+    }, 400);
+  }
+
+  const requestPayload = body.requestPayload || body.request || body.spzreq || {};
+  const companyId = cleanText(body.companyId || "", 80);
+  const productId = cleanText(body.productId || "spz-product-smartpozo360", 80);
+  const licenseDbId = cleanText(body.licenseDbId || body.id || "", 100);
+  const licenseCode = cleanText(body.licenseCode || body.licenseId || "", 120).toUpperCase();
+  const licenseType = cleanText(body.licenseType || "ANUAL", 40).toUpperCase();
+
+  const allowedLicenseTypes = ["ANUAL", "DEMO", "30DIAS"];
+
+  const requestFormat = cleanText(
+    requestPayload.requestFormat ||
+    requestPayload.request_format ||
+    requestPayload.format ||
+    requestPayload.type ||
+    "",
+    100
+  );
+
+  const requestProduct = cleanText(
+    requestPayload.product ||
+    requestPayload.productName ||
+    requestPayload.product_name ||
+    requestPayload.software ||
+    "",
+    120
+  );
+
+  const requestCompany = cleanText(
+    requestPayload.company ||
+    requestPayload.companyName ||
+    requestPayload.company_name ||
+    requestPayload.client ||
+    requestPayload.clientName ||
+    requestPayload.client_name ||
+    "",
+    180
+  );
+
+  const machineId = cleanText(
+    requestPayload.machineId ||
+    requestPayload.machine_id ||
+    requestPayload.hardwareId ||
+    requestPayload.hardware_id ||
+    requestPayload.deviceId ||
+    requestPayload.device_id ||
+    requestPayload?.machine?.id ||
+    requestPayload?.device?.machineId ||
+    "",
+    180
+  ).toUpperCase();
+
+  const machineIdSource = cleanText(
+    requestPayload.machineIdSource ||
+    requestPayload.machine_id_source ||
+    requestPayload.hardwareSource ||
+    "UNKNOWN",
+    120
+  );
+
+  const machineIdSourceLabel = cleanText(
+    requestPayload.machineIdSourceLabel ||
+    requestPayload.machine_id_source_label ||
+    requestPayload.hardwareSourceLabel ||
+    "ID de equipo",
+    180
+  );
+
+  if (!requestPayload || typeof requestPayload !== "object") {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_REQUEST_PAYLOAD",
+      message: "Falta el contenido del archivo .spzreq."
+    }, 400);
+  }
+
+  if (requestFormat !== "SPZ360_LICENSE_REQUEST_V1") {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_SPZREQ_FORMAT",
+      message: "El archivo no corresponde al formato SPZ360_LICENSE_REQUEST_V1."
+    }, 400);
+  }
+
+  if (!requestProduct || requestProduct.toLowerCase() !== "smartpozo360") {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_PRODUCT_REQUEST",
+      message: "La solicitud no corresponde a SmartPozo360."
+    }, 400);
+  }
+
+  if (!machineId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_MACHINE_ID",
+      message: "La solicitud no contiene Machine ID."
+    }, 400);
+  }
+
+  if (!/^SPZ-HW-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(machineId)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_MACHINE_ID",
+      message: "El Machine ID no tiene el formato esperado SPZ-HW-XXXX-XXXX-XXXX-XXXX."
+    }, 400);
+  }
+
+  if (!companyId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_COMPANY_ID",
+      message: "Seleccione la empresa para generar la licencia."
+    }, 400);
+  }
+
+  if (!productId) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_PRODUCT_ID",
+      message: "Seleccione el producto para generar la licencia."
+    }, 400);
+  }
+
+  if (!licenseDbId && !licenseCode) {
+    return corsResponse({
+      ok: false,
+      code: "MISSING_LICENSE",
+      message: "Seleccione una licencia web existente."
+    }, 400);
+  }
+
+  if (!allowedLicenseTypes.includes(licenseType)) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_LICENSE_TYPE",
+      message: "Tipo de licencia no permitido."
+    }, 400);
+  }
+
+  let license;
+
+  if (licenseDbId) {
+    license = await env.DB.prepare(`
+      SELECT
+        l.id,
+        l.company_id,
+        c.name AS company_name,
+        c.status AS company_status,
+        l.product_id,
+        sp.slug AS product_slug,
+        sp.name AS product_name,
+        sp.status AS product_status,
+        l.license_id,
+        l.license_name,
+        l.status,
+        l.starts_at,
+        l.expires_at,
+        l.max_users,
+        l.max_devices
+      FROM licenses l
+      LEFT JOIN companies c ON c.id = l.company_id
+      LEFT JOIN software_products sp ON sp.id = l.product_id
+      WHERE l.id = ?
+      LIMIT 1
+    `)
+      .bind(licenseDbId)
+      .first();
+  } else {
+    license = await env.DB.prepare(`
+      SELECT
+        l.id,
+        l.company_id,
+        c.name AS company_name,
+        c.status AS company_status,
+        l.product_id,
+        sp.slug AS product_slug,
+        sp.name AS product_name,
+        sp.status AS product_status,
+        l.license_id,
+        l.license_name,
+        l.status,
+        l.starts_at,
+        l.expires_at,
+        l.max_users,
+        l.max_devices
+      FROM licenses l
+      LEFT JOIN companies c ON c.id = l.company_id
+      LEFT JOIN software_products sp ON sp.id = l.product_id
+      WHERE upper(l.license_id) = upper(?)
+      LIMIT 1
+    `)
+      .bind(licenseCode)
+      .first();
+  }
+
+  if (!license) {
+    return corsResponse({
+      ok: false,
+      code: "LICENSE_NOT_FOUND",
+      message: "No se encontró la licencia web seleccionada."
+    }, 404);
+  }
+
+  if (license.company_id !== companyId) {
+    return corsResponse({
+      ok: false,
+      code: "LICENSE_COMPANY_MISMATCH",
+      message: "La licencia seleccionada no pertenece a la empresa elegida."
+    }, 400);
+  }
+
+  if (license.product_id !== productId) {
+    return corsResponse({
+      ok: false,
+      code: "LICENSE_PRODUCT_MISMATCH",
+      message: "La licencia seleccionada no corresponde al producto elegido."
+    }, 400);
+  }
+
+  if ((license.company_status || "") !== "active") {
+    return corsResponse({
+      ok: false,
+      code: "COMPANY_NOT_ACTIVE",
+      message: "La empresa asociada a la licencia no está activa."
+    }, 403);
+  }
+
+  const allowedProductStatuses = ["published", "active"];
+
+  if (!allowedProductStatuses.includes(license.product_status || "")) {
+    return corsResponse({
+      ok: false,
+      code: "PRODUCT_NOT_AVAILABLE",
+      message: "El producto asociado a la licencia no está publicado o activo."
+    }, 403);
+  }
+
+  if ((license.status || "active") !== "active") {
+    return corsResponse({
+      ok: false,
+      code: `LICENSE_${String(license.status || "inactive").toUpperCase()}`,
+      message: `La licencia seleccionada está en estado ${license.status}.`
+    }, 403);
+  }
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+
+  const startsAtDate = license.starts_at ? new Date(license.starts_at) : null;
+
+  if (
+    startsAtDate &&
+    !Number.isNaN(startsAtDate.getTime()) &&
+    startsAtDate > now
+  ) {
+    return corsResponse({
+      ok: false,
+      code: "LICENSE_NOT_STARTED",
+      message: "La licencia aún no inicia vigencia."
+    }, 403);
+  }
+
+  let expiresAt = cleanText(license.expires_at || "", 100);
+
+  if (!expiresAt) {
+    const expirationDate = new Date(now);
+
+    if (licenseType === "ANUAL") {
+      expirationDate.setFullYear(expirationDate.getFullYear() + 1);
+    } else if (licenseType === "30DIAS") {
+      expirationDate.setDate(expirationDate.getDate() + 30);
+    } else if (licenseType === "DEMO") {
+      expirationDate.setDate(expirationDate.getDate() + 15);
+    }
+
+    expiresAt = expirationDate.toISOString();
+  }
+
+  const expiresAtDate = expiresAt ? new Date(expiresAt) : null;
+
+  if (
+    expiresAtDate &&
+    !Number.isNaN(expiresAtDate.getTime()) &&
+    expiresAtDate <= now
+  ) {
+    return corsResponse({
+      ok: false,
+      code: "LICENSE_EXPIRED",
+      message: "La licencia seleccionada ya está vencida."
+    }, 403);
+  }
+
+  const normalizedCompanyForFile = String(license.company_name || requestCompany || "cliente")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 60) || "cliente";
+
+  const licenseFile = {
+    licenseFormat: "SPZ360_LICENSE_V1",
+    product: "SmartPozo360",
+    licenseId: license.license_id,
+    onlineLicenseId: license.license_id,
+    company: license.company_name || requestCompany || "",
+    machineId,
+    machineIdSource,
+    machineIdSourceLabel,
+    licenseType,
+    issuedAt: nowIso,
+    expiresAt,
+    issuedBy: "SEAZEP S.A. de C.V.",
+    contact: {
+      email: String(env.SEAZEP_CONTACT_EMAIL || "seazepfco@gmail.com"),
+      phone: String(env.SEAZEP_CONTACT_PHONE || "(476)-737-4517")
+    }
+  };
+
+  const filename = `licencia_${normalizedCompanyForFile}_${machineId}.spzlic`;
+  const licenseFileText = JSON.stringify(licenseFile, null, 2);
+
+  await env.DB.prepare(`
+    INSERT INTO audit_logs (
+      id,
+      actor_user_id,
+      action,
+      entity_type,
+      entity_id,
+      metadata,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+    .bind(
+      crypto.randomUUID(),
+      "temporary-admin",
+      "admin_spzlic_generated",
+      "licenses",
+      license.id,
+      JSON.stringify({
+        licenseDbId: license.id,
+        licenseCode: license.license_id,
+        companyId: license.company_id,
+        companyName: license.company_name || "",
+        productId: license.product_id,
+        productName: license.product_name || "",
+        requestCompany,
+        machineId,
+        machineIdSource,
+        machineIdSourceLabel,
+        licenseType,
+        filename,
+        expiresAt
+      }),
+      nowIso
+    )
+    .run();
+
+  return corsResponse({
+    ok: true,
+    message: "Archivo .spzlic generado correctamente.",
+    filename,
+    licenseFile: licenseFileText,
+    license: licenseFile
+  });
+}
+
+
+
+
 
 async function handleAdminUpdateLicenseStatus(request, env) {
   const auth = validateAdminRequest(request, env);

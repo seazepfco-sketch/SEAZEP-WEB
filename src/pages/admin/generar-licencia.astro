@@ -1,0 +1,528 @@
+---
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import Header from "../../components/Header.astro";
+import SectionTitle from "../../components/SectionTitle.astro";
+import Footer from "../../components/Footer.astro";
+---
+
+<BaseLayout title="Generar licencia ADM | SEAZEP">
+  <Header active="admin" />
+
+  <main>
+    <SectionTitle
+      eyebrow="Panel ADM"
+      title="Generar licencia desde solicitud .spzreq"
+      text="Herramienta administrativa para convertir una solicitud técnica de SmartPozo360 en un archivo de licencia .spzlic listo para entregar al cliente."
+    />
+
+    <section class="admin-grid">
+      <article class="card admin-access-panel">
+        <span class="eyebrow">Acceso operativo ADM</span>
+        <h3>Clave administrativa</h3>
+        <p>
+          La clave ADM se puede cargar automáticamente si ya fue guardada en esta sesión administrativa.
+        </p>
+
+        <label class="form-field">
+          <span>Clave ADM</span>
+          <input
+            id="adminApiKey"
+            type="password"
+            placeholder="ADMIN_API_KEY"
+            autocomplete="off"
+          />
+        </label>
+      </article>
+
+      <article class="card">
+        <span class="eyebrow">Paso 1</span>
+        <h3>Subir solicitud .spzreq</h3>
+        <p>
+          Seleccione el archivo de solicitud generado por SmartPozo360 en la computadora del cliente.
+        </p>
+
+        <label class="form-field">
+          <span>Archivo .spzreq</span>
+          <input id="spzreqFileInput" type="file" accept=".spzreq,.json,application/json" />
+        </label>
+
+        <div class="form-actions">
+          <button class="btn btn-ghost" type="button" id="clearRequestButton">
+            Limpiar
+          </button>
+        </div>
+
+        <p id="requestFileStatus" class="form-status" aria-live="polite">
+          Esperando archivo de solicitud.
+        </p>
+      </article>
+    </section>
+
+    <section class="card license-generator-card">
+      <div class="section-header-inline">
+        <div>
+          <span class="eyebrow">Vista previa</span>
+          <h3>Datos detectados en la solicitud</h3>
+        </div>
+      </div>
+
+      <div class="license-request-preview-grid">
+        <div>
+          <span>Formato</span>
+          <strong id="previewFormat">Sin archivo</strong>
+        </div>
+
+        <div>
+          <span>Producto</span>
+          <strong id="previewProduct">Sin archivo</strong>
+        </div>
+
+        <div>
+          <span>Machine ID</span>
+          <strong id="previewMachineId">Sin archivo</strong>
+        </div>
+
+        <div>
+          <span>Empresa sugerida</span>
+          <strong id="previewCompany">Sin archivo</strong>
+        </div>
+
+        <div>
+          <span>Fecha de solicitud</span>
+          <strong id="previewCreatedAt">Sin archivo</strong>
+        </div>
+
+        <div>
+          <span>Versión app</span>
+          <strong id="previewAppVersion">Sin archivo</strong>
+        </div>
+      </div>
+
+      <details class="technical-details">
+        <summary>Ver JSON leído del archivo</summary>
+        <pre id="requestJsonPreview">{}</pre>
+      </details>
+    </section>
+
+    <section class="card license-generator-card">
+      <div class="section-header-inline">
+        <div>
+          <span class="eyebrow">Paso 2</span>
+          <h3>Datos comerciales de la licencia</h3>
+        </div>
+      </div>
+
+      <div class="form-grid">
+        <label class="form-field">
+          <span>Empresa / cliente</span>
+          <select id="companySelect">
+            <option value="">Primero cargue empresas desde el Worker</option>
+          </select>
+        </label>
+
+        <label class="form-field">
+          <span>Producto</span>
+          <select id="productSelect">
+            <option value="spz-product-smartpozo360">SmartPozo360</option>
+          </select>
+        </label>
+
+        <label class="form-field">
+          <span>Licencia web existente</span>
+          <select id="licenseSelect">
+            <option value="">Primero cargue licencias desde el Worker</option>
+          </select>
+        </label>
+
+        <label class="form-field">
+          <span>Tipo de licencia</span>
+          <select id="licenseTypeSelect">
+            <option value="ANUAL">ANUAL</option>
+            <option value="DEMO">DEMO</option>
+            <option value="30DIAS">30DIAS</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn btn-ghost" type="button" id="loadCatalogsButton">
+          Cargar empresas y licencias
+        </button>
+
+        <button class="btn btn-primary" type="button" id="generateLicenseButton" disabled>
+          Generar .spzlic
+        </button>
+      </div>
+
+      <p id="generatorStatus" class="form-status" aria-live="polite">
+        Cargue una solicitud .spzreq para continuar.
+      </p>
+    </section>
+
+    <section class="card license-generator-card" id="downloadSection" hidden>
+      <div class="section-header-inline">
+        <div>
+          <span class="eyebrow">Resultado</span>
+          <h3>Licencia generada</h3>
+        </div>
+      </div>
+
+      <p>
+        El archivo .spzlic fue generado correctamente desde el Worker. Descárguelo y entréguelo al cliente.
+      </p>
+
+      <div class="form-actions">
+        <button class="btn btn-primary" type="button" id="downloadLicenseButton">
+          Descargar .spzlic
+        </button>
+      </div>
+
+      <pre id="generatedLicensePreview">{}</pre>
+    </section>
+  </main>
+
+  <Footer />
+
+  <script>
+    const API_BASE_URL = "https://seazep-api.seazepfco.workers.dev";
+
+    const adminApiKeyInput = document.getElementById("adminApiKey");
+    const spzreqFileInput = document.getElementById("spzreqFileInput");
+    const clearRequestButton = document.getElementById("clearRequestButton");
+    const requestFileStatus = document.getElementById("requestFileStatus");
+    const requestJsonPreview = document.getElementById("requestJsonPreview");
+
+    const previewFormat = document.getElementById("previewFormat");
+    const previewProduct = document.getElementById("previewProduct");
+    const previewMachineId = document.getElementById("previewMachineId");
+    const previewCompany = document.getElementById("previewCompany");
+    const previewCreatedAt = document.getElementById("previewCreatedAt");
+    const previewAppVersion = document.getElementById("previewAppVersion");
+
+    const companySelect = document.getElementById("companySelect");
+    const productSelect = document.getElementById("productSelect");
+    const licenseSelect = document.getElementById("licenseSelect");
+    const licenseTypeSelect = document.getElementById("licenseTypeSelect");
+    const loadCatalogsButton = document.getElementById("loadCatalogsButton");
+    const generateLicenseButton = document.getElementById("generateLicenseButton");
+    const generatorStatus = document.getElementById("generatorStatus");
+
+    const downloadSection = document.getElementById("downloadSection");
+    const downloadLicenseButton = document.getElementById("downloadLicenseButton");
+    const generatedLicensePreview = document.getElementById("generatedLicensePreview");
+
+    let currentRequestPayload = null;
+    let generatedLicenseFilename = "";
+    let generatedLicenseContent = "";
+
+    function setStatus(element, message, type = "") {
+      if (!element) return;
+
+      element.textContent = message || "";
+      element.className = type ? `form-status ${type}` : "form-status";
+    }
+
+    function safeText(value, fallback = "No indicado") {
+      const text = String(value || "").trim();
+      return text || fallback;
+    }
+
+    function getAdminKey() {
+      return String(adminApiKeyInput?.value || localStorage.getItem("seazep_admin_api_key") || "").trim();
+    }
+
+    function findMachineId(payload) {
+      return safeText(
+        payload.machineId ||
+        payload.machine_id ||
+        payload.hardwareId ||
+        payload.hardware_id ||
+        payload.deviceId ||
+        payload.device_id ||
+        payload?.machine?.id ||
+        payload?.device?.machineId ||
+        "",
+        ""
+      );
+    }
+
+    function findProduct(payload) {
+      return safeText(
+        payload.product ||
+        payload.productName ||
+        payload.product_name ||
+        payload.productSlug ||
+        payload.product_slug ||
+        payload.software ||
+        "SmartPozo360"
+      );
+    }
+
+    function findCompany(payload) {
+      return safeText(
+        payload.company ||
+        payload.companyName ||
+        payload.company_name ||
+        payload.client ||
+        payload.clientName ||
+        payload.client_name ||
+        ""
+      );
+    }
+
+    function findCreatedAt(payload) {
+      return safeText(
+        payload.createdAt ||
+        payload.created_at ||
+        payload.requestedAt ||
+        payload.requested_at ||
+        payload.timestamp ||
+        ""
+      );
+    }
+
+    function findAppVersion(payload) {
+      return safeText(
+        payload.appVersion ||
+        payload.app_version ||
+        payload.version ||
+        ""
+      );
+    }
+
+    function findRequestFormat(payload) {
+  return safeText(
+    payload.requestFormat ||
+    payload.request_format ||
+    payload.format ||
+    payload.type ||
+    payload.requestType ||
+    payload.request_type ||
+    "SPZREQ"
+  );
+}
+
+
+    function updatePreview(payload) {
+      const machineId = findMachineId(payload);
+
+      previewFormat.textContent = findRequestFormat(payload);
+      previewProduct.textContent = findProduct(payload);
+      previewMachineId.textContent = machineId || "No detectado";
+      previewCompany.textContent = findCompany(payload) || "No indicada";
+      previewCreatedAt.textContent = findCreatedAt(payload) || "No indicada";
+      previewAppVersion.textContent = findAppVersion(payload) || "No indicada";
+
+      requestJsonPreview.textContent = JSON.stringify(payload, null, 2);
+
+      generateLicenseButton.disabled = !machineId;
+    }
+
+    function resetGenerator() {
+      currentRequestPayload = null;
+      generatedLicenseFilename = "";
+      generatedLicenseContent = "";
+
+      if (spzreqFileInput) {
+        spzreqFileInput.value = "";
+      }
+
+      previewFormat.textContent = "Sin archivo";
+      previewProduct.textContent = "Sin archivo";
+      previewMachineId.textContent = "Sin archivo";
+      previewCompany.textContent = "Sin archivo";
+      previewCreatedAt.textContent = "Sin archivo";
+      previewAppVersion.textContent = "Sin archivo";
+      requestJsonPreview.textContent = "{}";
+      generatedLicensePreview.textContent = "{}";
+
+      generateLicenseButton.disabled = true;
+      downloadSection.hidden = true;
+
+      setStatus(requestFileStatus, "Esperando archivo de solicitud.");
+      setStatus(generatorStatus, "Cargue una solicitud .spzreq para continuar.");
+    }
+
+    async function readSelectedRequestFile(file) {
+      if (!file) {
+        resetGenerator();
+        return;
+      }
+
+      if (!file.name.toLowerCase().endsWith(".spzreq") && !file.name.toLowerCase().endsWith(".json")) {
+        setStatus(requestFileStatus, "El archivo debe ser .spzreq o .json.", "error");
+        return;
+      }
+
+      try {
+        const rawText = await file.text();
+        const payload = JSON.parse(rawText);
+
+        currentRequestPayload = payload;
+        updatePreview(payload);
+
+        setStatus(requestFileStatus, `Archivo leído correctamente: ${file.name}`, "success");
+        setStatus(generatorStatus, "Solicitud cargada. Ahora cargue empresas/licencias y genere el archivo.");
+      } catch (error) {
+        currentRequestPayload = null;
+        generateLicenseButton.disabled = true;
+        setStatus(requestFileStatus, error.message || "No se pudo leer el archivo .spzreq.", "error");
+      }
+    }
+
+    async function loadCatalogs() {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus(generatorStatus, "Ingrese o cargue la clave ADM antes de consultar catálogos.", "error");
+        return;
+      }
+
+      setStatus(generatorStatus, "Cargando empresas y licencias...");
+
+      try {
+        const [companiesResponse, licensesResponse] = await Promise.all([
+          fetch(`${API_BASE_URL}/admin/companies?limit=500`, {
+            headers: { "x-admin-key": adminKey }
+          }),
+          fetch(`${API_BASE_URL}/admin/licenses?limit=500`, {
+            headers: { "x-admin-key": adminKey }
+          })
+        ]);
+
+        const companiesResult = await companiesResponse.json();
+        const licensesResult = await licensesResponse.json();
+
+        if (!companiesResponse.ok || !companiesResult.ok) {
+          throw new Error(companiesResult.message || "No se pudieron cargar empresas.");
+        }
+
+        if (!licensesResponse.ok || !licensesResult.ok) {
+          throw new Error(licensesResult.message || "No se pudieron cargar licencias.");
+        }
+
+        const companies = companiesResult.companies || [];
+        const licenses = licensesResult.licenses || [];
+
+        companySelect.innerHTML = `<option value="">Seleccione empresa</option>`;
+        companies.forEach((company) => {
+          const option = document.createElement("option");
+          option.value = company.id || "";
+          option.textContent = `${company.name || company.company_name || "Empresa sin nombre"} — ${company.status || "sin estado"}`;
+          companySelect.appendChild(option);
+        });
+
+        licenseSelect.innerHTML = `<option value="">Seleccione licencia</option>`;
+        licenses.forEach((license) => {
+          const option = document.createElement("option");
+          option.value = license.id || license.license_db_id || license.licenseId || license.license_id || "";
+          option.dataset.licenseCode = license.license_id || license.licenseId || "";
+          option.dataset.companyId = license.company_id || license.companyId || "";
+          option.textContent = `${license.license_id || license.licenseId || "Sin código"} — ${license.license_name || license.licenseName || "Sin nombre"} — ${license.status || "sin estado"}`;
+          licenseSelect.appendChild(option);
+        });
+
+        setStatus(generatorStatus, "Catálogos cargados. Seleccione empresa/licencia y genere .spzlic.", "success");
+      } catch (error) {
+        setStatus(generatorStatus, error.message || "Error al cargar catálogos.", "error");
+      }
+    }
+
+    async function generateLicense() {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus(generatorStatus, "Ingrese la clave ADM.", "error");
+        return;
+      }
+
+      if (!currentRequestPayload) {
+        setStatus(generatorStatus, "Primero cargue un archivo .spzreq.", "error");
+        return;
+      }
+
+      if (!companySelect.value) {
+        setStatus(generatorStatus, "Seleccione una empresa.", "error");
+        return;
+      }
+
+      if (!licenseSelect.value) {
+        setStatus(generatorStatus, "Seleccione una licencia web existente.", "error");
+        return;
+      }
+
+      const selectedLicenseOption = licenseSelect.options[licenseSelect.selectedIndex];
+
+      const body = {
+        requestPayload: currentRequestPayload,
+        companyId: companySelect.value,
+        productId: productSelect.value,
+        licenseDbId: licenseSelect.value,
+        licenseCode: selectedLicenseOption?.dataset?.licenseCode || "",
+        licenseType: licenseTypeSelect.value
+      };
+
+      setStatus(generatorStatus, "Generando .spzlic desde Worker...");
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/admin/licenses/generate-spzlic`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-admin-key": adminKey
+          },
+          body: JSON.stringify(body)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudo generar la licencia.");
+        }
+
+        generatedLicenseFilename = result.filename || "licencia_smartpozo360.spzlic";
+        generatedLicenseContent = result.licenseFile || JSON.stringify(result.license || {}, null, 2);
+
+        generatedLicensePreview.textContent = generatedLicenseContent;
+        downloadSection.hidden = false;
+
+        setStatus(generatorStatus, "Licencia .spzlic generada correctamente.", "success");
+      } catch (error) {
+        setStatus(generatorStatus, error.message || "Error al generar licencia.", "error");
+      }
+    }
+
+    function downloadGeneratedLicense() {
+      if (!generatedLicenseContent) {
+        setStatus(generatorStatus, "No hay licencia generada para descargar.", "error");
+        return;
+      }
+
+      const blob = new Blob([generatedLicenseContent], {
+        type: "application/json;charset=utf-8"
+      });
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = generatedLicenseFilename || "licencia_smartpozo360.spzlic";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      URL.revokeObjectURL(url);
+    }
+
+    spzreqFileInput?.addEventListener("change", () => {
+      readSelectedRequestFile(spzreqFileInput.files?.[0]);
+    });
+
+    clearRequestButton?.addEventListener("click", resetGenerator);
+    loadCatalogsButton?.addEventListener("click", loadCatalogs);
+    generateLicenseButton?.addEventListener("click", generateLicense);
+    downloadLicenseButton?.addEventListener("click", downloadGeneratedLicense);
+
+    resetGenerator();
+  </script>
+</BaseLayout>

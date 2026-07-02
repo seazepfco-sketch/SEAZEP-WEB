@@ -2447,3 +2447,89 @@ sers\azada\Documents\PROYECTOS_SOFTWARE\SEAZEP\SEAZEP-WEB\src\styles\global.css
 }
 
 
+
+/* =====================================================
+   SEAZEP ADM — GENERADOR WEB SPZLIC DESDE SPZREQ
+   ===================================================== */
+
+.license-generator-card {
+  margin-top: 24px;
+}
+
+.section-header-inline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.license-request-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.license-request-preview-grid > div {
+  padding: 14px;
+  border: 1px solid rgba(148, 163, 184, .18);
+  border-radius: 16px;
+  background: rgba(15, 23, 42, .55);
+}
+
+.license-request-preview-grid span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.license-request-preview-grid strong {
+  display: block;
+  color: var(--white);
+  font-size: 14px;
+  word-break: break-word;
+}
+
+.technical-details {
+  margin-top: 18px;
+  border: 1px solid rgba(56, 189, 248, .18);
+  border-radius: 16px;
+  background: rgba(2, 10, 22, .32);
+}
+
+.technical-details summary {
+  padding: 12px 14px;
+  color: #bae6fd;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.technical-details pre,
+#generatedLicensePreview {
+  max-height: 360px;
+  overflow: auto;
+  margin: 0;
+  padding: 14px;
+  border-top: 1px solid rgba(56, 189, 248, .12);
+  color: #dbeafe;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 920px) {
+  .license-request-preview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .section-header-inline {
+    display: block;
+  }
+}
+
+
