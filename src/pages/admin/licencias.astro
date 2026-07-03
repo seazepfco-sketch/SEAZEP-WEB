@@ -718,6 +718,8 @@ import SectionTitle from "../../components/SectionTitle.astro";
     const ADMIN_COMPANIES_URL = "https://seazep-api.seazepfco.workers.dev/admin/companies";
     const ADMIN_LICENSE_ACTIVATIONS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-activations";
     const ADMIN_LICENSE_ACTIVATIONS_UPDATE_STATUS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-activations/update-status";
+    const ADMIN_LICENSE_OFFLINE_DAYS_URL = "https://seazep-api.seazepfco.workers.dev/admin/licenses/update-offline-days";
+    const ADMIN_LICENSE_ACTIVATION_OFFLINE_DAYS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-activations/update-offline-days";
     const ADMIN_LICENSE_CHECKS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-checks";
     const ADMIN_LICENSE_AUDIT_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-audit";
     const ADMIN_LICENSE_ALERTS_URL = "https://seazep-api.seazepfco.workers.dev/admin/license-alerts";
@@ -1076,6 +1078,8 @@ import SectionTitle from "../../components/SectionTitle.astro";
           <td>
             <strong>Activado: ${escapeHtml(formatDateTime(activation.activated_at))}</strong>
             <small>Último check: ${escapeHtml(formatDateTime(activation.last_check_at))}</small>
+            <small>Offline default licencia: ${escapeHtml(activation.license_max_offline_days || activation.max_offline_days || 4)} día(s)</small>
+            <small>Offline excepción PC: ${escapeHtml(activation.max_offline_days_override || "Sin excepción")}</small>
           </td>
 
           <td>
@@ -1105,6 +1109,15 @@ import SectionTitle from "../../components/SectionTitle.astro";
                 data-next-activation-status="revoked"
               >
                 Revocar
+              </button>
+
+              <button
+                class="btn btn-secondary"
+                type="button"
+                data-activation-offline-id="${escapeHtml(activation.id)}"
+                data-current-device-offline-days="${escapeHtml(activation.max_offline_days_override || "")}"
+              >
+                Offline PC
               </button>
             </div>
           </td>
@@ -1526,7 +1539,170 @@ import SectionTitle from "../../components/SectionTitle.astro";
 
 
 
-     function setExportStatus(message, type = "") {
+     
+     async function updateLicenseOfflineDays(licenseId, currentDays, button) {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus("Ingrese la clave ADM antes de actualizar días offline.", "error");
+        return;
+      }
+
+      if (!licenseId) {
+        setStatus("Licencia no válida para actualizar días offline.", "error");
+        return;
+      }
+
+      const input = window.prompt(
+        "Días offline default permitidos para esta licencia. Use un número de 1 a 30:",
+        currentDays || "4"
+      );
+
+      if (input === null) {
+        return;
+      }
+
+      const maxOfflineDays = Number(String(input || "").trim());
+
+      if (!Number.isFinite(maxOfflineDays) || Math.trunc(maxOfflineDays) < 1 || Math.trunc(maxOfflineDays) > 30) {
+        setStatus("Los días offline default deben estar entre 1 y 30.", "error");
+        return;
+      }
+
+      const normalizedDays = Math.trunc(maxOfflineDays);
+
+      const note = window.prompt(
+        `Nota opcional para cambiar offline default a ${normalizedDays} día(s):`,
+        `Cambio de días offline default a ${normalizedDays} desde panel ADM.`
+      );
+
+      if (note === null) {
+        return;
+      }
+
+      setStatus("Actualizando días offline default de la licencia...");
+
+      if (button) {
+        button.disabled = true;
+      }
+
+      try {
+        const response = await fetch(ADMIN_LICENSE_OFFLINE_DAYS_URL, {
+          method: "POST",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey,
+            "content-type": "text/plain;charset=UTF-8"
+          },
+          body: JSON.stringify({
+            licenseId,
+            maxOfflineDays: normalizedDays,
+            note
+          })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudieron actualizar los días offline de la licencia.");
+        }
+
+        setStatus(result.message || "Días offline default actualizados correctamente.", "success");
+
+        await loadLicenses();
+        await loadActivations();
+      } catch (error) {
+        setStatus(error.message || "Error al actualizar días offline default.", "error");
+      } finally {
+        if (button) {
+          button.disabled = false;
+        }
+      }
+    }
+
+    async function updateDeviceOfflineDays(activationId, currentDays, button) {
+      const adminKey = getAdminKey();
+
+      if (!adminKey) {
+        setStatus("Ingrese la clave ADM antes de actualizar días offline por PC.", "error");
+        return;
+      }
+
+      if (!activationId) {
+        setStatus("Activación no válida para actualizar días offline por PC.", "error");
+        return;
+      }
+
+      const input = window.prompt(
+        "Días offline permitidos para esta PC. Use 1 a 30. Deje vacío para usar el default de la licencia:",
+        currentDays || ""
+      );
+
+      if (input === null) {
+        return;
+      }
+
+      const rawValue = String(input || "").trim();
+      const clearOverride = rawValue === "";
+      let normalizedDays = null;
+
+      if (!clearOverride) {
+        const maxOfflineDays = Number(rawValue);
+
+        if (!Number.isFinite(maxOfflineDays) || Math.trunc(maxOfflineDays) < 1 || Math.trunc(maxOfflineDays) > 30) {
+          setStatus("Los días offline por PC deben estar entre 1 y 30.", "error");
+          return;
+        }
+
+        normalizedDays = Math.trunc(maxOfflineDays);
+      }
+
+      const note = clearOverride
+        ? "Excepción offline por PC eliminada desde panel ADM. El equipo usará el default de la licencia."
+        : `Cambio de días offline por PC a ${normalizedDays} desde panel ADM.`;
+
+      setStatus(clearOverride ? "Eliminando excepción offline por PC..." : "Actualizando días offline por PC...");
+
+      if (button) {
+        button.disabled = true;
+      }
+
+      try {
+        const response = await fetch(ADMIN_LICENSE_ACTIVATION_OFFLINE_DAYS_URL, {
+          method: "POST",
+          mode: "cors",
+          headers: {
+            "x-admin-key": adminKey,
+            "content-type": "text/plain;charset=UTF-8"
+          },
+          body: JSON.stringify({
+            activationId,
+            maxOfflineDays: normalizedDays,
+            clearOverride,
+            note
+          })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudieron actualizar los días offline por PC.");
+        }
+
+        setStatus(result.message || "Días offline por PC actualizados correctamente.", "success");
+
+        await loadActivations();
+        await loadLicenses();
+      } catch (error) {
+        setStatus(error.message || "Error al actualizar días offline por PC.", "error");
+      } finally {
+        if (button) {
+          button.disabled = false;
+        }
+      }
+    }
+
+function setExportStatus(message, type = "") {
       if (!licenseExportStatus) return;
 
       licenseExportStatus.textContent = message;
@@ -2337,6 +2513,7 @@ import SectionTitle from "../../components/SectionTitle.astro";
             <strong>Usuarios: ${escapeHtml(license.max_users || 1)}</strong>
             <small>Dispositivos: ${escapeHtml(license.max_devices || 1)}</small>
             <small>Activaciones: ${escapeHtml(license.activations_count || 0)}</small>
+            <small>Offline default: ${escapeHtml(license.max_offline_days || 4)} día(s)</small>
           </td>
 
           <td>
@@ -2382,6 +2559,15 @@ import SectionTitle from "../../components/SectionTitle.astro";
                 data-commercial-action="edit-commercial"
               >
                 Editar comercial
+              </button>
+
+              <button
+                class="btn btn-secondary"
+                type="button"
+                data-license-offline-id="${escapeHtml(license.id)}"
+                data-current-license-offline-days="${escapeHtml(license.max_offline_days || 4)}"
+              >
+                Offline default
               </button>
 
               <button
@@ -2909,7 +3095,29 @@ import SectionTitle from "../../components/SectionTitle.astro";
     });
 
     
-        licensesTableBody?.addEventListener("click", async (event) => {
+        
+     licensesTableBody?.addEventListener("click", async (event) => {
+      const target = event.target;
+
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      const button = target.closest("button[data-license-offline-id]");
+
+      if (!button) {
+        return;
+      }
+
+      const licenseId = button.dataset.licenseOfflineId || "";
+      const currentDays = button.dataset.currentLicenseOfflineDays || "4";
+
+      await updateLicenseOfflineDays(licenseId, currentDays, button);
+    });
+
+
+
+    licensesTableBody?.addEventListener("click", async (event) => {
       const target = event.target;
 
       if (!(target instanceof Element)) {
@@ -2941,12 +3149,20 @@ import SectionTitle from "../../components/SectionTitle.astro";
       }
     });
 
-
-
      activationsTableBody?.addEventListener("click", async (event) => {
       const target = event.target;
 
       if (!(target instanceof Element)) {
+        return;
+      }
+
+      const offlineButton = target.closest("button[data-activation-offline-id]");
+
+      if (offlineButton) {
+        const activationId = offlineButton.dataset.activationOfflineId || "";
+        const currentDays = offlineButton.dataset.currentDeviceOfflineDays || "";
+
+        await updateDeviceOfflineDays(activationId, currentDays, offlineButton);
         return;
       }
 
@@ -2964,7 +3180,7 @@ import SectionTitle from "../../components/SectionTitle.astro";
 
 
 
-    setDefaultDates();
+setDefaultDates();
   </script>
 </BaseLayout>
 

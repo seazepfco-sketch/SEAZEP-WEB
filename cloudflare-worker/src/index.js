@@ -4366,6 +4366,7 @@ function getSafeManualFileName(value) {
       l.expires_at,
       l.max_users,
       l.max_devices,
+      COALESCE(l.max_offline_days, 4) AS max_offline_days,
       l.notes,
       l.created_at,
       l.updated_at,
@@ -4396,6 +4397,7 @@ function getSafeManualFileName(value) {
       l.expires_at,
       l.max_users,
       l.max_devices,
+      l.max_offline_days,
       l.notes,
       l.created_at,
       l.updated_at
