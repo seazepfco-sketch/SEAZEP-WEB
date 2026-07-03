@@ -157,6 +157,11 @@ if (url.pathname === "/admin/licenses/generate-spzlic" && request.method === "PO
 }
 
 
+if (url.pathname === "/admin/licenses/files/download" && request.method === "GET") {
+  return handleAdminDownloadLicenseFile(request, env);
+}
+
+
 if (url.pathname === "/admin/licenses/update-status" && request.method === "POST") {
   return handleAdminUpdateLicenseStatus(request, env);
 }
@@ -4697,6 +4702,111 @@ async function handleAdminCreateLicense(request, env) {
 
 
 
+  function normalizeR2Segment(value, fallback = "sin_dato") {
+  return String(value || fallback)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80) || fallback;
+}
+
+function buildLicenseFileR2Prefix({ companyName, productName, licenseCode, machineId }) {
+  const companySegment = normalizeR2Segment(companyName, "cliente");
+  const productSegment = normalizeR2Segment(productName || "SmartPozo360", "smartpozo360");
+  const licenseSegment = normalizeR2Segment(licenseCode, "licencia");
+  const machineSegment = normalizeR2Segment(machineId, "machine_id");
+
+  return `clients/${companySegment}/${productSegment}/${licenseSegment}/${machineSegment}`;
+}
+
+async function saveLicenseFileToR2(env, key, content, metadata = {}) {
+  if (!env.LICENSE_FILES) {
+    return {
+      ok: false,
+      code: "R2_NOT_CONFIGURED",
+      message: "El binding LICENSE_FILES no está configurado."
+    };
+  }
+
+  const safeMetadata = {};
+
+  for (const [name, value] of Object.entries(metadata || {})) {
+    safeMetadata[name] = String(value || "").slice(0, 512);
+  }
+
+  await env.LICENSE_FILES.put(key, content, {
+    httpMetadata: {
+      contentType: "application/json; charset=utf-8"
+    },
+    customMetadata: safeMetadata
+  });
+
+  return {
+    ok: true,
+    key
+  };
+}
+
+async function handleAdminDownloadLicenseFile(request, env) {
+  const auth = validateAdminRequest(request, env);
+
+  if (!auth.ok) {
+    return corsResponse({
+      ok: false,
+      code: "UNAUTHORIZED",
+      message: "Acceso administrativo no autorizado."
+    }, 401);
+  }
+
+  if (!env.LICENSE_FILES) {
+    return corsResponse({
+      ok: false,
+      code: "R2_NOT_CONFIGURED",
+      message: "El almacenamiento R2 LICENSE_FILES no está configurado."
+    }, 500);
+  }
+
+  const url = new URL(request.url);
+  const key = String(url.searchParams.get("key") || "").trim();
+  const filename = String(url.searchParams.get("filename") || key.split("/").pop() || "archivo-seazep.json")
+    .replace(/["\\/:*?<>|]+/g, "_")
+    .slice(0, 160);
+
+  if (!key || key.includes("..") || key.startsWith("/") || !key.startsWith("clients/")) {
+    return corsResponse({
+      ok: false,
+      code: "INVALID_R2_KEY",
+      message: "Ruta de archivo R2 no válida."
+    }, 400);
+  }
+
+  const object = await env.LICENSE_FILES.get(key);
+
+  if (!object) {
+    return corsResponse({
+      ok: false,
+      code: "R2_FILE_NOT_FOUND",
+      message: "No se encontró el archivo solicitado en R2."
+    }, 404);
+  }
+
+  return new Response(object.body, {
+    headers: {
+      "access-control-allow-origin": "*",
+      "access-control-allow-methods": "GET,POST,OPTIONS",
+      "access-control-allow-headers": "content-type,authorization,x-admin-key",
+      "content-type": object.httpMetadata?.contentType || "application/octet-stream",
+      "content-disposition": `attachment; filename="${filename}"`
+    }
+  });
+}
+
+
+
+
+
 async function handleAdminGenerateSpzlic(request, env) {
   const auth = validateAdminRequest(request, env);
 
@@ -5039,10 +5149,73 @@ async function handleAdminGenerateSpzlic(request, env) {
     }
   };
 
-  const filename = `licencia_${normalizedCompanyForFile}_${machineId}.spzlic`;
-  const licenseFileText = JSON.stringify(licenseFile, null, 2);
+  
+  
 
-  await env.DB.prepare(`
+  const filename = `licencia_${normalizedCompanyForFile}_${machineId}.spzlic`;
+const licenseFileText = JSON.stringify(licenseFile, null, 2);
+
+let r2Files = null;
+
+if (env.LICENSE_FILES) {
+  const r2Prefix = buildLicenseFileR2Prefix({
+    companyName: license.company_name || requestCompany || "cliente",
+    productName: "SmartPozo360",
+    licenseCode: license.license_id,
+    machineId
+  });
+
+  const requestFilename = `solicitud_${machineId}.spzreq`;
+  const requestKey = `${r2Prefix}/01_SOLICITUD_SPZREQ/${requestFilename}`;
+  const licenseKey = `${r2Prefix}/02_LICENCIA_SPZLIC/${filename}`;
+
+  const commonMetadata = {
+    companyId: license.company_id,
+    companyName: license.company_name || requestCompany || "",
+    productId: license.product_id,
+    productName: "SmartPozo360",
+    licenseDbId: license.id,
+    licenseCode: license.license_id,
+    machineId,
+    licenseType,
+    generatedAt: nowIso
+  };
+
+  await saveLicenseFileToR2(
+    env,
+    requestKey,
+    JSON.stringify(requestPayload, null, 2),
+    {
+      ...commonMetadata,
+      fileRole: "spzreq"
+    }
+  );
+
+  await saveLicenseFileToR2(
+    env,
+    licenseKey,
+    licenseFileText,
+    {
+      ...commonMetadata,
+      fileRole: "spzlic"
+    }
+  );
+
+  r2Files = {
+    bucket: "seazep-license-files",
+    prefix: r2Prefix,
+    request: {
+      key: requestKey,
+      filename: requestFilename
+    },
+    license: {
+      key: licenseKey,
+      filename
+    }
+  };
+}
+
+await env.DB.prepare(`
     INSERT INTO audit_logs (
       id,
       actor_user_id,
@@ -5072,19 +5245,25 @@ async function handleAdminGenerateSpzlic(request, env) {
         machineIdSourceLabel,
         licenseType,
         filename,
-        expiresAt
+        expiresAt,
+        r2Files
       }),
       nowIso
     )
     .run();
 
-  return corsResponse({
-    ok: true,
-    message: "Archivo .spzlic generado correctamente.",
-    filename,
-    licenseFile: licenseFileText,
-    license: licenseFile
-  });
+  
+    
+    return corsResponse({
+  ok: true,
+  message: r2Files
+    ? "Archivo .spzlic generado correctamente y expediente guardado en R2."
+    : "Archivo .spzlic generado correctamente. R2 no está configurado.",
+  filename,
+  licenseFile: licenseFileText,
+  license: licenseFile,
+  r2Files
+});
 }
 
 

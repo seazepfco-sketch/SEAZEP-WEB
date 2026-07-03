@@ -12,3 +12,6 @@ binding = "DB"
 database_name = "seazep-db"
 database_id = "c9f8c056-8050-495d-8fcd-44882c8df22b"
 
+[[r2_buckets]]
+binding = "LICENSE_FILES"
+bucket_name = "seazep-license-files"

@@ -171,10 +171,37 @@ import Footer from "../../components/Footer.astro";
         El archivo .spzlic fue generado correctamente desde el Worker. Descárguelo y entréguelo al cliente.
       </p>
 
-      <div class="form-actions">
+      
+      
+       <div class="form-actions">
         <button class="btn btn-primary" type="button" id="downloadLicenseButton">
           Descargar .spzlic
         </button>
+
+        <button class="btn btn-ghost" type="button" id="downloadStoredRequestButton" hidden>
+          Descargar .spzreq guardado
+        </button>
+
+        <button class="btn btn-ghost" type="button" id="downloadStoredLicenseButton" hidden>
+          Descargar .spzlic guardado en R2
+        </button>
+      </div>
+
+      <div class="r2-file-box" id="r2FileBox" hidden>
+        <span class="eyebrow">Expediente web R2</span>
+        <p>Los archivos quedaron guardados en Cloudflare R2.</p>
+
+        <div class="r2-file-grid">
+          <div>
+            <span>Solicitud .spzreq</span>
+            <code id="r2RequestKey">Sin guardar</code>
+          </div>
+
+          <div>
+            <span>Licencia .spzlic</span>
+            <code id="r2LicenseKey">Sin guardar</code>
+          </div>
+        </div>
       </div>
 
       <pre id="generatedLicensePreview">{}</pre>
@@ -211,9 +238,16 @@ import Footer from "../../components/Footer.astro";
     const downloadLicenseButton = document.getElementById("downloadLicenseButton");
     const generatedLicensePreview = document.getElementById("generatedLicensePreview");
 
+    const downloadStoredRequestButton = document.getElementById("downloadStoredRequestButton");
+    const downloadStoredLicenseButton = document.getElementById("downloadStoredLicenseButton");
+    const r2FileBox = document.getElementById("r2FileBox");
+    const r2RequestKey = document.getElementById("r2RequestKey");
+    const r2LicenseKey = document.getElementById("r2LicenseKey");
+
     let currentRequestPayload = null;
     let generatedLicenseFilename = "";
     let generatedLicenseContent = "";
+    let generatedR2Files = null;
 
     function setStatus(element, message, type = "") {
       if (!element) return;
@@ -322,6 +356,7 @@ import Footer from "../../components/Footer.astro";
       currentRequestPayload = null;
       generatedLicenseFilename = "";
       generatedLicenseContent = "";
+      generatedR2Files = null;
 
       if (spzreqFileInput) {
         spzreqFileInput.value = "";
@@ -338,6 +373,12 @@ import Footer from "../../components/Footer.astro";
 
       generateLicenseButton.disabled = true;
       downloadSection.hidden = true;
+
+    if (r2FileBox) r2FileBox.hidden = true;
+    if (downloadStoredRequestButton) downloadStoredRequestButton.hidden = true;
+    if (downloadStoredLicenseButton) downloadStoredLicenseButton.hidden = true;
+    if (r2RequestKey) r2RequestKey.textContent = "Sin guardar";
+    if (r2LicenseKey) r2LicenseKey.textContent = "Sin guardar";
 
       setStatus(requestFileStatus, "Esperando archivo de solicitud.");
       setStatus(generatorStatus, "Cargue una solicitud .spzreq para continuar.");
@@ -480,17 +521,101 @@ import Footer from "../../components/Footer.astro";
           throw new Error(result.message || "No se pudo generar la licencia.");
         }
 
+        
         generatedLicenseFilename = result.filename || "licencia_smartpozo360.spzlic";
         generatedLicenseContent = result.licenseFile || JSON.stringify(result.license || {}, null, 2);
 
         generatedLicensePreview.textContent = generatedLicenseContent;
         downloadSection.hidden = false;
 
-        setStatus(generatorStatus, "Licencia .spzlic generada correctamente.", "success");
+        renderR2Files(result.r2Files || null);
+
+        setStatus(generatorStatus, result.message || "Licencia .spzlic generada correctamente.", "success");
       } catch (error) {
         setStatus(generatorStatus, error.message || "Error al generar licencia.", "error");
       }
     }
+
+
+    function renderR2Files(files) {
+  generatedR2Files = files || null;
+
+  if (!files) {
+    if (r2FileBox) r2FileBox.hidden = true;
+    if (downloadStoredRequestButton) downloadStoredRequestButton.hidden = true;
+    if (downloadStoredLicenseButton) downloadStoredLicenseButton.hidden = true;
+    return;
+  }
+
+  if (r2FileBox) r2FileBox.hidden = false;
+
+  if (r2RequestKey) {
+    r2RequestKey.textContent = files.request?.key || "No guardado";
+  }
+
+  if (r2LicenseKey) {
+    r2LicenseKey.textContent = files.license?.key || "No guardado";
+  }
+
+  if (downloadStoredRequestButton) {
+    downloadStoredRequestButton.hidden = !files.request?.key;
+  }
+
+  if (downloadStoredLicenseButton) {
+    downloadStoredLicenseButton.hidden = !files.license?.key;
+  }
+}
+
+async function downloadStoredR2File(fileInfo) {
+  const adminKey = getAdminKey();
+
+  if (!adminKey) {
+    setStatus(generatorStatus, "Ingrese la clave ADM para descargar desde R2.", "error");
+    return;
+  }
+
+  if (!fileInfo?.key) {
+    setStatus(generatorStatus, "No hay archivo R2 disponible para descargar.", "error");
+    return;
+  }
+
+  try {
+    const url = `${API_BASE_URL}/admin/licenses/files/download?key=${encodeURIComponent(fileInfo.key)}&filename=${encodeURIComponent(fileInfo.filename || "archivo-seazep.json")}`;
+
+    const response = await fetch(url, {
+      headers: {
+        "x-admin-key": adminKey
+      }
+    });
+
+    if (!response.ok) {
+      let message = "No se pudo descargar el archivo desde R2.";
+
+      try {
+        const result = await response.json();
+        message = result.message || message;
+      } catch {}
+
+      throw new Error(message);
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = objectUrl;
+    link.download = fileInfo.filename || "archivo-seazep.json";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    URL.revokeObjectURL(objectUrl);
+  } catch (error) {
+    setStatus(generatorStatus, error.message || "Error al descargar archivo R2.", "error");
+  }
+}
+
+
 
     function downloadGeneratedLicense() {
       if (!generatedLicenseContent) {
@@ -522,6 +647,14 @@ import Footer from "../../components/Footer.astro";
     loadCatalogsButton?.addEventListener("click", loadCatalogs);
     generateLicenseButton?.addEventListener("click", generateLicense);
     downloadLicenseButton?.addEventListener("click", downloadGeneratedLicense);
+
+    downloadStoredRequestButton?.addEventListener("click", () => {
+  downloadStoredR2File(generatedR2Files?.request);
+});
+
+downloadStoredLicenseButton?.addEventListener("click", () => {
+  downloadStoredR2File(generatedR2Files?.license);
+});
 
     resetGenerator();
   </script>
