@@ -1115,6 +1115,8 @@ import SectionTitle from "../../components/SectionTitle.astro";
                 class="btn btn-secondary"
                 type="button"
                 data-activation-offline-id="${escapeHtml(activation.id)}"
+                data-device-license-id="${escapeHtml(activation.license_code || activation.license_db_id || "")}"
+                data-device-machine-id="${escapeHtml(activation.machine_id || "")}"
                 data-current-device-offline-days="${escapeHtml(activation.max_offline_days_override || "")}"
               >
                 Offline PC
@@ -1633,6 +1635,14 @@ import SectionTitle from "../../components/SectionTitle.astro";
         return;
       }
 
+      const licenseRef = button?.dataset?.deviceLicenseId || "";
+      const machineId = button?.dataset?.deviceMachineId || "";
+
+      if (!licenseRef || !machineId) {
+        setStatus("No se encontró la licencia o Machine ID de esta activación.", "error");
+        return;
+      }
+
       const input = window.prompt(
         "Días offline permitidos para esta PC. Use 1 a 30. Deje vacío para usar el default de la licencia:",
         currentDays || ""
@@ -1677,6 +1687,8 @@ import SectionTitle from "../../components/SectionTitle.astro";
           },
           body: JSON.stringify({
             activationId,
+            licenseId: licenseRef,
+            machineId,
             maxOfflineDays: normalizedDays,
             clearOverride,
             note

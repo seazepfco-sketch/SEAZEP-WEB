@@ -5775,7 +5775,9 @@ function parsePositiveInteger(value, fallback) {
       la.app_version,
       la.status,
       la.activated_at,
-      la.last_check_at
+      la.last_check_at,
+      COALESCE(l.max_offline_days, 4) AS license_max_offline_days,
+      la.max_offline_days_override
     FROM license_activations la
     LEFT JOIN licenses l ON l.id = la.license_id
     LEFT JOIN software_products sp ON sp.id = la.product_id
