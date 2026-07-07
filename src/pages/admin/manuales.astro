@@ -424,6 +424,28 @@ import SectionTitle from "../../components/SectionTitle.astro";
 
       return `
         <div class="admin-action-buttons">
+
+
+            <a
+  class="admin-mini-btn convert"
+  href="${escapeHtml(manual.file_url || '#')}"
+  target="_blank"
+  rel="noopener noreferrer"
+>
+  Ver manual
+</a>
+
+<a
+  class="admin-mini-btn convert"
+  href="${escapeHtml(manual.file_url || '#')}"
+  download
+>
+  Descargar
+</a>
+
+
+
+
           ${actions.map((action) => `
             <button
               class="admin-mini-btn ${action.className}"
@@ -435,6 +457,8 @@ import SectionTitle from "../../components/SectionTitle.astro";
               ${escapeHtml(action.label)}
             </button>
           `).join("")}
+
+         
 
           <div class="admin-manual-company-actions">
             <select
@@ -490,10 +514,38 @@ import SectionTitle from "../../components/SectionTitle.astro";
             <small>ID: ${escapeHtml(String(manual.id || "").slice(0, 8))}...</small>
           </td>
 
+          
+          
           <td>
-            <strong>${escapeHtml(manual.file_url || "Sin URL")}</strong>
-            <small>Producto: ${escapeHtml(manual.product_id || "N/D")}</small>
-          </td>
+
+<strong>
+${escapeHtml(manual.file_url || "Sin URL")}
+</strong>
+
+${
+manual.file_url
+?
+`
+<small>
+Archivo disponible
+</small>
+`
+:
+`
+<small>
+Sin archivo registrado
+</small>
+`
+}
+
+<small>
+Producto:
+${escapeHtml(manual.product_id || "N/D")}
+</small>
+
+</td>
+
+
 
           <td>
             <strong>${escapeHtml(manual.category || "Sin categoría")}</strong>
@@ -603,6 +655,23 @@ import SectionTitle from "../../components/SectionTitle.astro";
         setStatus("La URL o ruta del archivo es obligatoria.", "error");
         return;
       }
+
+
+      if (
+ !payload.fileUrl.startsWith("/assets/")
+ &&
+ !payload.fileUrl.startsWith("http")
+) {
+
+ setStatus(
+ "La ruta del manual debe iniciar con /assets/ o ser una URL válida.",
+ "error"
+ );
+
+ return;
+}
+
+
 
       setStatus("Creando manual...");
       createManualButton.disabled = true;
